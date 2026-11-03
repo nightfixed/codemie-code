@@ -30,11 +30,17 @@ if (isHookProcess) {
 // Imported after the console switch: their module graph logs at import time.
 const { MigrationRunner } = await import('../dist/migrations/index.js');
 const { checkAndPromptForUpdate } = await import('../dist/utils/cli-updater.js');
+const { isDryRunInvocation } = await import('../dist/cli/commands/shared/dry-run.js');
+
+// `--dry-run` promises that nothing changes on the machine, so the start-up side
+// effects that write (pending migrations, the interactive update prompt, and the
+// once-per-upgrade notice that records the seen version) are all skipped for it.
+const isDryRun = isDryRunInvocation(process.argv.slice(2));
 
 // Auto-run pending migrations (happens at startup)
 // Migrations are tracked in ~/.codemie/migrations.json and only run once
 try {
-  if (await MigrationRunner.hasPending()) {
+  if (!isDryRun && await MigrationRunner.hasPending()) {
     await MigrationRunner.runPending({
       silent: isHookProcess  // Show migration messages to user, except in a hook
     });
@@ -52,7 +58,7 @@ try {
 // Skip in test environments to avoid timeouts and network calls during testing
 // Non-blocking: failures don't prevent CLI from running
 const isTestEnvironment = process.env.NODE_ENV === 'test' || process.env.VITEST === 'true';
-if (!isTestEnvironment && !isHookProcess) {
+if (!isTestEnvironment && !isHookProcess && !isDryRun) {
   try {
     await checkAndPromptForUpdate();
   } catch (error) {
@@ -65,8 +71,9 @@ if (!isTestEnvironment && !isHookProcess) {
 // shouldRunUpgradeNotice skips non-TTY stdout, `hook` invocations, and
 // invocations with their own output contract (--version/-V/--task/--help);
 // a hook process (`hook`, `sound`) never reaches it. A skipped notice writes
-// no marker, so it shows on the next run in a terminal.
-if (!isTestEnvironment && !isHookProcess) {
+// no marker, so it shows on the next run in a terminal. `--dry-run` skips it
+// too: the notice records the seen version, which is a write.
+if (!isTestEnvironment && !isHookProcess && !isDryRun) {
   try {
     const { readFileSync } = await import('node:fs');
     const { shouldRunUpgradeNotice, showUpgradeNotice } = await import('../dist/utils/whatsnew.js');
