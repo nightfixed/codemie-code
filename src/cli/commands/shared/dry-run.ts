@@ -66,6 +66,20 @@ export function printDryRunFooter(tier: 1 | 2 | 3): void {
   process.stdout.write(`${FOOTERS[tier]}\n`);
 }
 
+/**
+ * Renders a preview plan in plain text: each action's label, then each of its
+ * targets on an indented bullet line. Prints nothing else — the end-cap is the
+ * caller's job.
+ */
+export function printPlannedActions(actions: PlannedAction[]): void {
+  for (const action of actions) {
+    process.stdout.write(`${action.label}\n`);
+    for (const target of action.targets) {
+      process.stdout.write(`  - ${target}\n`);
+    }
+  }
+}
+
 function writeEndCap(): void {
   if (endCapPrinted) {
     return;

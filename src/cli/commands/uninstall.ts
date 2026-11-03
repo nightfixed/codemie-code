@@ -1,13 +1,16 @@
 import { Command } from 'commander';
+import { join } from 'path';
 import { AgentRegistry } from '@/agents/registry.js';
 import { getAgentUninstallCommand, getUserFacingAgentName, resolveAgentAlias } from '@/agents/core/agent-aliases.js';
 import { AgentNotFoundError, getErrorMessage } from '@/utils/errors.js';
+import { resolveHomeDir } from '@/utils/paths.js';
 import {
   STATUSLINE_NAME,
   STATUSLINE_DISPLAY_NAME,
   uninstallStatusline,
   isStatuslineInstalled,
 } from '@/agents/plugins/claude/statusline-installer.js';
+import { printEndCap, printPlannedActions, type PlannedAction } from './shared/dry-run.js';
 import ora from 'ora';
 import chalk from 'chalk';
 
@@ -17,7 +20,13 @@ export function createUninstallCommand(): Command {
   command
     .description('Uninstall an AI agent or framework')
     .argument('[name]', 'Agent or framework name to uninstall (run without argument to see installed)')
-    .action(async (name?: string) => {
+    .action(async (name?: string, options?: { dryRun?: boolean }) => {
+      // Dry run: describe the plan and stop before any side effect.
+      if (options?.dryRun) {
+        await buildPreviewPlanUninstall(name);
+        return;
+      }
+
       try {
         // If no name provided, show installed agents and frameworks
         if (!name) {
@@ -148,31 +157,115 @@ export function createUninstallCommand(): Command {
       } catch (error: unknown) {
         // Handle AgentNotFoundError with helpful suggestions
         if (error instanceof AgentNotFoundError) {
-          console.error(chalk.red(`✗ ${getErrorMessage(error)}`));
-          console.log();
-          console.log(chalk.cyan('💡 Available agents and frameworks:'));
-          const allAgents = AgentRegistry.getManageableAgents();
-          for (const agent of allAgents) {
-            console.log(chalk.white(`   • ${getUserFacingAgentName(agent.name)}`));
-          }
-
-          const { FrameworkRegistry } = await import('../../frameworks/index.js');
-          const frameworks = FrameworkRegistry.getAllFrameworks();
-          for (const framework of frameworks) {
-            console.log(chalk.white(`   • ${framework.metadata.name}`));
-          }
-
-          console.log();
-          console.log(chalk.cyan('💡 Tip:') + ' Run ' + chalk.blueBright('codemie uninstall') + ' to see installed items');
-          console.log();
-          process.exit(1);
+          await printUnknownUninstallTarget(getErrorMessage(error));
+          printEndCap();
+          process.exitCode = 1;
+          return;
         }
 
         // For other errors, show simple message
         console.error(chalk.red(`✗ Uninstallation failed: ${getErrorMessage(error)}`));
-        process.exit(1);
+        printEndCap();
+        process.exitCode = 1;
       }
     });
 
   return command;
+}
+
+/** One shared line for "there is nothing to uninstall under that name". */
+async function printUnknownUninstallTarget(message: string): Promise<void> {
+  console.error(chalk.red(`✗ ${message}`));
+  console.log();
+  console.log(chalk.cyan('💡 Available agents and frameworks:'));
+  const allAgents = AgentRegistry.getManageableAgents();
+  for (const agent of allAgents) {
+    console.log(chalk.white(`   • ${getUserFacingAgentName(agent.name)}`));
+  }
+
+  const { FrameworkRegistry } = await import('../../frameworks/index.js');
+  for (const framework of FrameworkRegistry.getAllFrameworks()) {
+    console.log(chalk.white(`   • ${framework.metadata.name}`));
+  }
+
+  console.log();
+  console.log(chalk.cyan('💡 Tip:') + ' Run ' + chalk.blueBright('codemie uninstall') + ' to see installed items');
+  console.log();
+}
+
+/** The read-only listing `codemie uninstall` prints when no name is given. */
+async function describeInstalledListing(): Promise<PlannedAction> {
+  const installedAgents = await AgentRegistry.getInstalledAgents();
+
+  return {
+    kind: 'exec',
+    label: 'List installed agents and frameworks (read-only)',
+    targets: [
+      `${installedAgents.length} installed agents`,
+      'framework install status (read-only check)',
+    ],
+  };
+}
+
+/**
+ * What `uninstallStatusline()` removes: the deployed script, the legacy script
+ * from the old `--status` mechanism, and the `statusLine` entry in settings.
+ */
+function describeStatuslineUninstall(): PlannedAction {
+  const claudeHome = resolveHomeDir('.claude');
+
+  return {
+    kind: 'remove',
+    label: `Remove the ${STATUSLINE_DISPLAY_NAME} script and its Claude Code settings entry`,
+    targets: [
+      join(claudeHome, 'codemie-budget-status.js'),
+      `${join(claudeHome, 'codemie-statusline.mjs')} (legacy script, if present)`,
+      `${join(claudeHome, 'settings.json')} (statusLine entry)`,
+    ],
+  };
+}
+
+/**
+ * Prints the `codemie uninstall --dry-run` plan. Describe-only: it never removes,
+ * writes, or reaches the network.
+ */
+async function buildPreviewPlanUninstall(name?: string): Promise<void> {
+  if (!name) {
+    printPlannedActions([await describeInstalledListing()]);
+    printEndCap();
+    process.exitCode = 0;
+    return;
+  }
+
+  const canonicalName = resolveAgentAlias(name) || name;
+
+  if (name === STATUSLINE_NAME) {
+    printPlannedActions([describeStatuslineUninstall()]);
+    printEndCap();
+    process.exitCode = 0;
+    return;
+  }
+
+  const agent = AgentRegistry.getAgent(canonicalName);
+
+  if (agent) {
+    printPlannedActions(agent.describeUninstall());
+    printEndCap();
+    process.exitCode = 0;
+    return;
+  }
+
+  const { FrameworkRegistry } = await import('../../frameworks/index.js');
+  const framework = FrameworkRegistry.getFramework(name);
+
+  if (framework) {
+    printPlannedActions(framework.describeUninstall());
+    printEndCap();
+    process.exitCode = 0;
+    return;
+  }
+
+  await printUnknownUninstallTarget(getErrorMessage(new AgentNotFoundError(name)));
+  printEndCap();
+  process.exitCode = 1;
 }

@@ -1,10 +1,13 @@
 import { Command } from 'commander';
+import { join } from 'path';
 import { AgentRegistry } from '@/agents/registry.js';
 import { getAgentInstallCommand, getAgentLauncherCommand, getUserFacingAgentName, resolveAgentAlias } from '@/agents/core/agent-aliases.js';
 import { AgentInstallationError, getErrorMessage } from '@/utils/errors.js';
 import { logger } from '@/utils/logger.js';
 import { restoreCliBinLink } from '@/utils/cli-bin.js';
-import type { AgentInstallationOptions } from '@/agents/core/types.js';
+import { getCodemieNpmPrefix } from '@/utils/npm-prefix.js';
+import { resolveHomeDir } from '@/utils/paths.js';
+import type { AgentAdapter, AgentInstallationOptions } from '@/agents/core/types.js';
 import {
   STATUSLINE_NAME,
   STATUSLINE_DISPLAY_NAME,
@@ -12,6 +15,7 @@ import {
   installStatusline,
   isStatuslineInstalled,
 } from '@/agents/plugins/claude/statusline-installer.js';
+import { printEndCap, printPlannedActions, type PlannedAction } from './shared/dry-run.js';
 import ora from 'ora';
 import chalk from 'chalk';
 
@@ -25,13 +29,20 @@ export function createInstallCommand(): Command {
     .option('--supported', 'Install the latest supported version tested with CodeMie')
     .option('--verbose', 'Show detailed installation logs for troubleshooting')
     .option('--sounds', 'Enable sounds (plays audio on hook events)')
-    .action(async (name?: string, version?: string, options?: AgentInstallationOptions & { supported?: boolean }) => {
+    .action(async (name?: string, version?: string, options?: AgentInstallationOptions & { supported?: boolean; dryRun?: boolean }) => {
       // Enable debug mode if --verbose flag is set
       if (options?.verbose) {
         process.env.CODEMIE_DEBUG = 'true';
         logger.debug('Verbose mode enabled');
         console.log(chalk.gray('🔍 Verbose mode enabled - showing detailed logs\n'));
       }
+
+      // Dry run: describe the plan and stop before any side effect.
+      if (options?.dryRun) {
+        await buildPreviewPlanInstall(name);
+        return;
+      }
+
       try {
         // If no name provided, show available agents and frameworks
         if (!name) {
@@ -325,24 +336,132 @@ export function createInstallCommand(): Command {
       } catch (error: unknown) {
         // Handle AgentInstallationError with helpful suggestions
         if (error instanceof AgentInstallationError) {
-          console.error(chalk.red(`✗ ${getErrorMessage(error)}`));
-          console.log();
-          console.log(chalk.cyan('💡 Available agents:'));
-          const allAgents = AgentRegistry.getManageableAgents();
-          for (const agent of allAgents) {
-            console.log(chalk.white(`   • ${getUserFacingAgentName(agent.name)}`));
-          }
-          console.log();
-          console.log(chalk.cyan('💡 Tip:') + ' Run ' + chalk.blueBright('codemie install') + ' to see all agents');
-          console.log();
-          process.exit(1);
+          printUnknownInstallTarget(getErrorMessage(error));
+          printEndCap();
+          process.exitCode = 1;
+          return;
         }
 
         // For other errors, show simple message
         console.error(chalk.red(`✗ Installation failed: ${getErrorMessage(error)}`));
-        process.exit(1);
+        printEndCap();
+        process.exitCode = 1;
       }
     });
 
   return command;
+}
+
+/** One shared line for "there is nothing to install under that name". */
+function printUnknownInstallTarget(message: string): void {
+  console.error(chalk.red(`✗ ${message}`));
+  console.log();
+  console.log(chalk.cyan('💡 Available agents:'));
+  const allAgents = AgentRegistry.getManageableAgents();
+  for (const agent of allAgents) {
+    console.log(chalk.white(`   • ${getUserFacingAgentName(agent.name)}`));
+  }
+  console.log();
+  console.log(chalk.cyan('💡 Tip:') + ' Run ' + chalk.blueBright('codemie install') + ' to see all agents');
+  console.log();
+}
+
+/** The read-only listing `codemie install` prints when no name is given. */
+function describeAvailableListing(): PlannedAction {
+  const agents = AgentRegistry.getManageableAgents();
+
+  return {
+    kind: 'exec',
+    label: 'List available agents, frameworks and add-ons (read-only)',
+    targets: [
+      `${agents.length} manageable agents`,
+      'development frameworks and documentation tools',
+      `add-on: ${STATUSLINE_DISPLAY_NAME}`,
+    ],
+  };
+}
+
+/**
+ * The script + settings rewrite performed by `installStatusline()`: the script
+ * lands in `~/.claude`, and its `statusLine` command is registered in
+ * `~/.claude/settings.json`.
+ */
+function describeStatuslineInstall(): PlannedAction {
+  const claudeHome = resolveHomeDir('.claude');
+
+  return {
+    kind: 'write-file',
+    label: `Write the ${STATUSLINE_DISPLAY_NAME} script and register it in Claude Code settings`,
+    targets: [
+      join(claudeHome, 'codemie-budget-status.js'),
+      `${join(claudeHome, 'settings.json')} (statusLine entry)`,
+    ],
+  };
+}
+
+/**
+ * The global `codemie` bin symlink rewrite that `restoreCliBinLink()` performs
+ * after an agent package has been installed over it.
+ */
+function describeCliBinLinkRestore(): PlannedAction {
+  const prefix = getCodemieNpmPrefix();
+
+  return {
+    kind: 'write-file',
+    label: 'Restore the global codemie bin symlink if the agent package overwrote it',
+    targets: [prefix ? join(prefix, 'bin', 'codemie') : 'global npm bin link for codemie'],
+  };
+}
+
+/**
+ * Prints the `codemie install --dry-run` plan. Describe-only: it never installs,
+ * writes, removes, links, or reaches the network.
+ */
+async function buildPreviewPlanInstall(name?: string): Promise<void> {
+  if (!name) {
+    printPlannedActions([describeAvailableListing()]);
+    printEndCap();
+    process.exitCode = 0;
+    return;
+  }
+
+  const canonicalName = resolveAgentAlias(name) || name;
+
+  if (name === STATUSLINE_NAME) {
+    printPlannedActions([describeStatuslineInstall()]);
+    printEndCap();
+    process.exitCode = 0;
+    return;
+  }
+
+  const agent: AgentAdapter | undefined = AgentRegistry.getAgent(canonicalName);
+
+  if (agent) {
+    printPlannedActions([
+      ...agent.describeInstall(),
+      ...(agent.describeAdditionalInstallation ? agent.describeAdditionalInstallation() : []),
+      describeCliBinLinkRestore(),
+    ]);
+    printEndCap();
+    process.exitCode = 0;
+    return;
+  }
+
+  const { FrameworkRegistry } = await import('../../frameworks/index.js');
+  const framework = FrameworkRegistry.getFramework(name);
+
+  if (framework) {
+    printPlannedActions(framework.describeInstall());
+    printEndCap();
+    process.exitCode = 0;
+    return;
+  }
+
+  printUnknownInstallTarget(
+    getErrorMessage(
+      new AgentInstallationError(name, `Unknown agent or framework. Use 'codemie install' to see available options.`),
+    ),
+  );
+  printEndCap();
+  process.exitCode = 1;
 }

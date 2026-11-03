@@ -7,6 +7,7 @@ import type { FrameworkAdapter } from '../../frameworks/core/types.js';
 import { AgentRegistry } from '../../agents/registry.js';
 import { getErrorMessage } from '../../utils/errors.js';
 import { logger } from '../../utils/logger.js';
+import { printEndCap, printPlannedActions } from './shared/dry-run.js';
 
 /**
  * Documentation & knowledge tools command group.
@@ -42,10 +43,19 @@ export function createDocsCommand(): Command {
   docs
     .command('install <name>')
     .description('Install a documentation tool (see: codemie docs list)')
-    .action(async (name: string) => {
+    .action(async (name: string, options: { dryRun?: boolean }) => {
       const tool = resolveDocsTool(name);
       if (!tool) {
+        printEndCap();
         process.exitCode = 1;
+        return;
+      }
+
+      // Dry run: describe the plan and stop before any side effect.
+      if (options?.dryRun) {
+        printPlannedActions(tool.describeInstall());
+        printEndCap();
+        process.exitCode = 0;
         return;
       }
 
