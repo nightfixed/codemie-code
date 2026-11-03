@@ -1,0 +1,29 @@
+{
+  "schema": 1,
+  "branch": "EPMCDME-16643_dry-run-previews",
+  "head": "62e7f2ada2e4003ba116ea0fb9ef6068d9a0b970",
+  "runner": "npm",
+  "started_at": "2026-11-03T18:24:40.000Z",
+  "completed_at": "2026-11-03T18:27:07.300Z",
+  "status": "BLOCKED",
+  "drift_detected": false,
+  "gates": [
+    {"id": "license", "source": "guide", "status": "PASS", "duration_ms": 1352, "command": "npm run license-check", "exit_code": 0},
+    {"id": "lint", "source": "guide", "status": "PASS", "duration_ms": 2499, "command": "npm run lint", "exit_code": 0},
+    {"id": "typecheck", "source": "guide", "status": "PASS", "duration_ms": 2482, "command": "npm run typecheck", "exit_code": 0},
+    {"id": "build", "source": "guide", "status": "PASS", "duration_ms": 4457, "command": "npm run build", "exit_code": 0},
+    {"id": "unit", "source": "guide", "status": "FAIL", "duration_ms": 55340, "command": "npx vitest run --project unit", "exit_code": 1, "notes": "3 tests failed in src/utils/__tests__/system-proxy-dispatcher.test.ts (proxy loopback connect timeout to 127.0.0.2); file is outside the branch diff."},
+    {"id": "integration", "source": "guide", "status": "PASS", "duration_ms": 39175, "command": "npx vitest run --project cli", "exit_code": 0},
+    {"id": "secrets", "source": "guide", "status": "SKIPPED", "duration_ms": 837, "command": "npm run validate:secrets", "exit_code": 0, "notes": "Self-skip: output \"No staged changes to scan\" — the local Gitleaks scan only reads git diff --staged and nothing is staged, so the branch diff was not scanned. CI (ci.yml secrets-detection reusable workflow) runs the same scan unconditionally."},
+    {"id": "commitlint", "source": "guide", "status": "PASS", "duration_ms": 394, "command": "npm run commitlint:last", "exit_code": 0, "notes": "Validates HEAD~1..HEAD only (single most recent commit), not the full branch range."},
+    {"id": "check:pre-commit", "source": "guide", "status": "PASS", "duration_ms": 5056, "command": "npm run check:pre-commit", "exit_code": 0},
+    {"id": "lint-staged", "source": "hook", "status": "SKIPPED", "duration_ms": 495, "command": "npx lint-staged", "exit_code": 0, "notes": "Self-skip: \"lint-staged could not find any staged files.\" At commit time with staged files this runs eslint (max-warnings=0) + vitest related on staged files."},
+    {"id": "test-windows", "source": "ci", "status": "N/A", "command": "npx vitest run --project unit && npx vitest run --project cli (windows-latest)", "notes": "Requires GitHub windows-latest runner; not runnable locally. CRLF risk is mitigated by .gitattributes (* text=auto eol=lf)."},
+    {"id": "codeql", "source": "ci", "status": "N/A", "command": "CodeQL (reusable-codeql.yml, language: actions)", "notes": "Requires GitHub CodeQL infrastructure; not runnable locally."},
+    {"id": "pr-title", "source": "ci", "status": "N/A", "command": "reusable-commit-lint.yml (PR title)", "notes": "Requires pull-request context; not runnable in this checkout."},
+    {"id": "ci", "source": "guide", "status": "N/A", "command": "npm run ci", "notes": "Composite gate (license-check && lint && build && unit && cli); all constituents ran individually above and the composite would fail at unit."}
+  ],
+  "failures": {
+    "unit": "RUN  v4.1.5 /Users/Andrada_Anca/work/codemie-dev/codemie-code\n\n |unit| src/utils/__tests__/system-proxy-dispatcher.test.ts (3 tests | 3 failed)\n  × routes global fetch through the explicit proxy\n  × routes global fetch directly when NO_PROXY matches\n  × routes the Node HTTP client through proxy and bypass paths per request\n\nFAIL |unit| src/utils/__tests__/system-proxy-dispatcher.test.ts > system proxy global fetch dispatcher > routes global fetch through the explicit proxy\nFAIL |unit| src/utils/__tests__/system-proxy-dispatcher.test.ts > system proxy global fetch dispatcher > routes global fetch directly when NO_PROXY matches\nTypeError: fetch failed\nCaused by: ConnectTimeoutError: Connect Timeout Error (attempted address: 127.0.0.2:52346, timeout: 10000ms)\nSerialized Error: { code: 'UND_ERR_CONNECT_TIMEOUT' }\n\nFAIL |unit| src/utils/__tests__/system-proxy-dispatcher.test.ts > system proxy global fetch dispatcher > routes the Node HTTP client through proxy and bypass paths per request\nAssertionError: promise rejected \"Error: Request timeout after 5000ms\" instead of resolving\n ❯ src/utils/__tests__/system-proxy-dispatcher.test.ts:166:90\n       await expect(client.get<{ ok: boolean }>(`http://127.0.0.2:${tar…\n         .resolves.toMatchObject({ data: { ok: true } });\nCaused by: Error: Request timeout after 5000ms\n ❯ ClientRequest.<anonymous> src/providers/core/base/http-client.ts:152:16\n\n Test Files  1 failed | 440 passed (441)\n      Tests  3 failed | 7362 passed (7365)\n   Duration  54.49s"
+  }
+}

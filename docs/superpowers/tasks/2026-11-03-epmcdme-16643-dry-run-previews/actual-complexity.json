@@ -1,0 +1,40 @@
+{
+  "schema": 1,
+  "generated": "2026-11-03T12:00:00Z",
+  "dimensions": {
+    "component_scope":      { "score": 6, "label": "XXL" },
+    "requirements_clarity": { "score": 3, "label": "M" },
+    "technical_risk":       { "score": 5, "label": "XL" },
+    "file_change_estimate": { "score": 6, "label": "XXL" },
+    "dependencies":         { "score": 1, "label": "XS" },
+    "affected_layers":      { "score": 5, "label": "XL" }
+  },
+  "total": 26,
+  "size": "XL",
+  "band_range": "27-31",
+  "files_changed": 67,
+  "routing": "split-required",
+  "key_reasoning": [
+    {
+      "dimension": "component_scope",
+      "reason": "Introduces a brand-new shared contract (PlanKind/PlannedAction in src/types/dry-run.ts) consumed by agents, providers, frameworks and the CLI, plus new required describe* seams (describeInstall/describeUninstall/describeAdditionalInstallation/describeCredentialSideEffects) on every adapter hierarchy and a tiered dry-run registration abstraction. Touches 20+ plugin implementations across three subsystems and the bin entry point."
+    },
+    {
+      "dimension": "technical_risk",
+      "reason": "Safety-critical feature: the dry-run promise of 'nothing changes' must hold across every mutating command. Each describe* method must be pure (no write, no network, no credential-store write, no spawned process); no prior template covers this side-effect-free description pattern. New defensive logic (raw-argv predicate distinguishing --dry-run=false/--no-dry-run/-- delimiter/--task value, once-only end-cap with exit fallback). Security-sensitive due to credential side-effect descriptions and the proxy-must-stop path in BaseAgentAdapter.run()."
+    },
+    {
+      "dimension": "file_change_estimate",
+      "reason": "67 files changed, 3790 insertions(+), 240 deletions(-) spanning bin/, src/cli, src/agents, src/providers, src/frameworks, and a new src/types module. Several new files (dry-run model, shared dry-run core, registration table) plus new test suites."
+    },
+    {
+      "dimension": "affected_layers",
+      "reason": "Touches UI (CLI rendering: printPlannedActions/footers/end-cap), API (commander command definitions and the dry-run registration table), Service (adapter/plugin describe logic and provider setup-step descriptions), Infrastructure (startup side-effect gating in src/cli/startup.ts and bin/codemie.js, proxy connect/disconnect orchestrators and connectors), with external-integration touchpoints (VS Code, Claude/Codex desktop, provider connectors) — a cross-cutting concern added across several layers."
+    }
+  ],
+  "red_flags_applied": [
+    "Technical Risk bumped L→XL: security/safety-sensitive dry-run guarantee that describe seams never mutate the machine, reach the network, or write credentials",
+    "Component Scope capped at XXL: touches core shared abstractions (BaseAgentAdapter, BaseFrameworkAdapter, agent/framework/provider core types) and affects multiple CLI workflows plus all agent/provider/framework plugins"
+  ],
+  "split_recommendation": "by-component + by-dependency: (1) shared dry-run model (src/types/dry-run.ts) and describe* seams on the three adapter cores first, (2) per-hierarchy describe* implementations (agents → providers → frameworks), (3) CLI registration table and per-command preview wiring. Foundation-first; no slice spans the agents/providers/frameworks/CLI subsystems."
+}

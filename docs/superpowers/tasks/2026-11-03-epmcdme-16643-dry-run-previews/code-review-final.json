@@ -1,0 +1,353 @@
+{
+  "schema": "sdlc-factory/code-review-final@1",
+  "passed": true,
+  "decision": "request-changes",
+  "gate_decision": {
+    "gate": "code-review.check",
+    "decision": "approve",
+    "source": "hitl",
+    "rationale": "11/12 findings fixed; CR-012 (analytics suppression negative statement) dispositioned wont-fix — first-delivery commands emit no analytics (verified), recording deferred to follow-up."
+  },
+  "gates": [
+    {
+      "gate": "code-review.final",
+      "decision": "request-changes",
+      "source": "hitl",
+      "rationale": "12 major findings; CR-008 (credential deletion on dry run) is a real mutation bug and must be fixed. Proceed to review-fix."
+    },
+    {
+      "gate": "code-review.check",
+      "decision": "approve",
+      "source": "hitl",
+      "rationale": "11/12 findings fixed; CR-012 (analytics suppression negative statement) dispositioned wont-fix — first-delivery commands emit no analytics (verified), recording deferred to follow-up."
+    }
+  ],
+  "reviewed_head": "62e7f2ada2e4003ba116ea0fb9ef6068d9a0b970",
+  "rounds": [
+    "final",
+    "check"
+  ],
+  "rationale": "Eleven of twelve blocking findings are resolved on current source: startup side-effect gating moved to src/cli/startup.ts with a regression test, PlannedAction relocated to layer-neutral @/types/dry-run.js, ACP describe overrides, install try/catch, profile path.join and the would-sign-in status decision, proxy end-caps and non-mutating credential check, setup credential prompts, --dry-run=true/1 parsing, and planner negative-assertion tests. CR-012 (dry-run analytics suppression) remains unresolved — its source file was not touched and no CLI --dry-run analytics gate or per-command statement was added.",
+  "confidence": "low",
+  "check_confidence": "medium",
+  "risk_flags": [
+    "auth",
+    "security",
+    "migration"
+  ],
+  "open": 0,
+  "closed": {
+    "fixed": 10,
+    "moot": 0,
+    "decided": 1,
+    "wont_fix": 1
+  },
+  "findings": [
+    {
+      "id": "CR-001",
+      "kind": "code",
+      "severity": "major",
+      "triage": "patch",
+      "file": "bin/codemie.js",
+      "title": "Startup side-effect gating lacks regression tests",
+      "problem": "The !isDryRun guards around MigrationRunner, the update check, and the upgrade-notice marker in bin/codemie.js are what keep a dry run from writing, but no test loads this startup path with --dry-run to assert those helpers are not invoked.",
+      "impact": "Dropping a guard — or isDryRunInvocation mis-slicing argv — would let a dry run execute pending migrations or reach the network and write the seen-version marker with nothing failing.",
+      "recommendation": "Add a bin/codemie.js dry-run startup test asserting MigrationRunner.runPending, the update check, and the upgrade-notice write are skipped.",
+      "status": "resolved",
+      "check_notes": "gating moved to src/cli/startup.ts; startup.test.ts asserts migrations/update-check/upgrade-notice skipped for --dry-run",
+      "fix": {
+        "change": "Extracted the three gated startup side effects into src/cli/startup.ts runStartupSideEffects(); bin/codemie.js now calls it, so the guards are unit-testable",
+        "test": "src/cli/startup.test.ts — npx vitest run --project unit src/cli/startup.test.ts"
+      }
+    },
+    {
+      "id": "CR-002",
+      "kind": "code",
+      "severity": "major",
+      "triage": "patch",
+      "file": "src/agents/core/types.ts",
+      "line": 6,
+      "title": "Core type modules import a CLI-command type",
+      "problem": "PlannedAction, a CLI-output shape, lives in @/cli/commands/shared/dry-run.js and is now imported (type-only) by agents/providers/frameworks core types and base adapters, reversing the documented CLI -> Registry -> Plugin dependency direction.",
+      "impact": "Type-only, so no runtime cycle, but the core layers are now coupled to a CLI module; relocating or renaming the type touches every core module, and the seam invites future runtime imports down the same path.",
+      "recommendation": "Move PlannedAction to a layer-neutral shared types module (e.g. under agents/core or a common types dir) and re-point all imports.",
+      "status": "resolved",
+      "check_notes": "PlannedAction relocated to layer-neutral @/types/dry-run.js across core types",
+      "fix": {
+        "change": "Moved PlanKind/PlannedAction to layer-neutral src/types/dry-run.ts; src/cli/.../dry-run.ts re-exports; re-pointed all agents/providers/frameworks imports off @/cli",
+        "test": "npx tsc --noEmit (type-only move, resolved via typecheck + describe contract tests)"
+      }
+    },
+    {
+      "id": "CR-003",
+      "kind": "code",
+      "severity": "major",
+      "triage": "patch",
+      "file": "src/agents/plugins/claude/claude-acp.plugin.ts",
+      "line": 65,
+      "title": "ACP installs preview the plain agent's installer",
+      "problem": "ClaudeAcpPlugin and CodexAcpPlugin override install() to npm-only but inherit ClaudePlugin/CodexPlugin describeInstall()/describeUninstall(), so a dry run of install claude-acp/codex-acp names the plain native installer and npm package instead of the @agentclientprotocol ACP package.",
+      "impact": "The install --dry-run preview for ACP variants is wrong (a first-delivery command), telling users an action the npm-only ACP install never performs.",
+      "recommendation": "Override describeInstall()/describeUninstall() in the ACP plugins to describe their own npm-only package/action.",
+      "status": "resolved",
+      "check_notes": "ACP plugins override describeInstall/describeUninstall to name the @agentclientprotocol package",
+      "fix": {
+        "change": "Added npm-only describeInstall/describeUninstall overrides to ClaudeAcpPlugin and CodexAcpPlugin naming @agentclientprotocol packages",
+        "test": "src/agents/plugins/codex/__tests__/codex-acp.plugin.test.ts + src/agents/plugins/claude/__tests__/claude-acp.plugin.test.ts"
+      }
+    },
+    {
+      "id": "CR-004",
+      "kind": "code",
+      "severity": "major",
+      "triage": "patch",
+      "file": "src/cli/commands/install.ts",
+      "line": 41,
+      "title": "Dry-run previews run outside try/catch",
+      "problem": "install/uninstall/docs call buildPreviewPlan*/describeInstall() before their try block, so a throw from a describe implementation (e.g. platform/package resolution) becomes an unhandled rejection with no error message or end-cap.",
+      "impact": "On such a failure the command crashes without the AC8 'nothing was changed' statement or a clean error status.",
+      "recommendation": "Wrap the dry-run preview calls in the same try/catch (or a dedicated one) that prints the failure and printEndCap with a non-zero exit code.",
+      "status": "resolved",
+      "check_notes": "install dry-run branch moved inside try/catch; throwing describe prints failure end-cap",
+      "fix": {
+        "change": "Moved install/uninstall dry-run preview calls inside their try block and wrapped docs install dry-run in its own try/catch printing failure end-cap + exit 1",
+        "test": "install throwing-describe case in src/cli/commands/__tests__/dry-run-registration.test.ts"
+      }
+    },
+    {
+      "id": "CR-005",
+      "kind": "code",
+      "severity": "major",
+      "triage": "patch",
+      "file": "src/cli/commands/profile/index.ts",
+      "line": 81,
+      "title": "Switch/delete previews can name the wrong config file",
+      "problem": "resolveProfileConfigPath builds the local target by string concatenation and switch/delete previews choose local-vs-global from ConfigLoader.hasLocalConfig while the real switchProfile/deleteProfile resolve the write target themselves; the preview can therefore name a config file the mutation will not touch.",
+      "impact": "Users see a 'would modify <path>' plan pointing at the wrong config file. (Reachability of the divergence from the real write target was not fully confirmed.)",
+      "recommendation": "Resolve the preview target from the same path logic the real switch/delete uses, and join segments with path.join.",
+      "status": "resolved",
+      "check_notes": "resolveProfileConfigPath uses path.join mirroring ConfigLoader.LOCAL_CONFIG",
+      "fix": {
+        "change": "resolveProfileConfigPath now joins the local path with path.join(workingDir,'.codemie','codemie-cli.config.json') matching ConfigLoader.LOCAL_CONFIG",
+        "test": "resolveProfileConfigPath cases in src/cli/commands/profile/__tests__/index.test.ts"
+      }
+    },
+    {
+      "id": "CR-006",
+      "kind": "decision",
+      "severity": "major",
+      "triage": "decision_needed",
+      "file": "src/cli/commands/profile/index.ts",
+      "line": 158,
+      "title": "Profile status contradicts its read-only tier",
+      "problem": "profile status is registered tier 2 ('does not modify anything'), whose wrapper prints 'Nothing to preview', but on invalid auth handleStatus(dryRun) also prints a 'would re-authenticate' plan; the real path re-authenticates, i.e. writes credentials.",
+      "impact": "One invocation emits two contradictory footers, and tier-2's 'does not modify anything' is false for a command that can re-auth. AC5 (status does not re-authenticate) and AC7 (status re-auth describes) conflict, so the intended behavior needs a decision.",
+      "recommendation": "Decide whether profile status is strictly read-only (suppress the re-auth plan under tier 2) or a would-sign-in describe command (stop printing the read-only footer), then reconcile AC5/AC7.",
+      "status": "decided",
+      "check_notes": "decision B applied: status is tier-1 would-sign-in describe, no read-only footer",
+      "fix": {
+        "change": "Option B: re-tiered profile status to 1 (would-sign-in describe); status action reads dryRun via optsWithGlobals so --dry-run threads to the re-auth branch; invalid-auth describes re-auth; valid/no-profile paths end-cap with no credential write",
+        "test": "profile-status would-sign-in describe case in src/cli/commands/__tests__/dry-run-registration.test.ts"
+      },
+      "decision": {
+        "outcome": "B — profile status is a would-sign-in describe command",
+        "rationale": "Stop printing the read-only 'Nothing to preview' footer for status; on the invalid-auth path, describe the would-be re-authentication as a planned action (no credential write), and end the read-only/valid-auth paths with the 'Nothing was changed.' end-cap."
+      }
+    },
+    {
+      "id": "CR-007",
+      "kind": "code",
+      "severity": "major",
+      "triage": "patch",
+      "file": "src/cli/commands/proxy/connect-orchestrator.ts",
+      "line": 1178,
+      "title": "No-target connect/disconnect dry run omits the end-cap",
+      "problem": "describeConnect and describeDisconnect return early after printing the target list when no target is passed, before printEndCap, so proxy connect --dry-run with no targets never prints 'Nothing was changed.'",
+      "impact": "Violates AC2's 'ending with a clear statement that nothing was changed' on an empty-target dry run.",
+      "recommendation": "Call printEndCap() (with a failure exit where appropriate) before the no-target early returns.",
+      "status": "resolved",
+      "check_notes": "printEndCap added before no-target early return in describeConnect/describeDisconnect",
+      "fix": {
+        "change": "Added printEndCap() before the no-target early returns in describeConnect and describeDisconnect",
+        "test": "no-target end-cap cases in connect-orchestrator.test.ts and disconnect-orchestrator.test.ts"
+      }
+    },
+    {
+      "id": "CR-008",
+      "kind": "code",
+      "severity": "major",
+      "triage": "patch",
+      "file": "src/cli/commands/proxy/connect-orchestrator.ts",
+      "line": 1249,
+      "title": "Proxy connect dry run deletes expired credentials",
+      "problem": "describeConnect calls getStoredPlatformCredentials to check credential presence, but that helper's lookup deletes an expired credential entry (per its own doc), so a documented-as-'presence-only' dry run performs a credential-store write (a delete).",
+      "impact": "A dry run mutates the credential store — deleting an expired SSO entry and forcing a later re-login — violating the core 'nothing was changed' promise and AC6/AC7.",
+      "recommendation": "Use a genuinely non-mutating presence check (or add one) for the dry-run path instead of getStoredPlatformCredentials.",
+      "status": "resolved",
+      "check_notes": "getStoredPlatformCredentials called with nonMutating:true",
+      "fix": {
+        "change": "Added deleteExpired param to CodeMieSSO.getStoredCredentials and nonMutating threading through getStoredPlatformCredentials; describeConnect uses { nonMutating: true }",
+        "test": "non-mutating case in src/providers/core/__tests__/codemie-auth-helpers.test.ts"
+      }
+    },
+    {
+      "id": "CR-009",
+      "kind": "code",
+      "severity": "major",
+      "triage": "patch",
+      "file": "src/cli/commands/setup.ts",
+      "line": 463,
+      "title": "Setup dry run doesn't ask credential questions",
+      "problem": "buildSetupPlan emits a 'would prompt for <provider> credentials' action instead of calling getCredentials, so the questions AC4 says a prompting command must still ask are never asked.",
+      "impact": "setup --dry-run only prompts for the profile name; the credential answers the user would give are never previewed, a partial AC4 miss.",
+      "recommendation": "Ask the credential questions during the dry run and preview the result of those answers without applying them (or get spec sign-off to describe instead).",
+      "status": "resolved",
+      "check_notes": "previewPluginSetup asks getCredentials for non-SSO providers and previews answers",
+      "fix": {
+        "change": "previewPluginSetup asks getCredentials for non-SSO providers; buildSetupPlan previews the gathered answers instead of 'would prompt'",
+        "test": "buildSetupPlan credential-question cases in src/cli/commands/__tests__/dry-run-registration.test.ts"
+      }
+    },
+    {
+      "id": "CR-010",
+      "kind": "code",
+      "severity": "major",
+      "triage": "patch",
+      "file": "src/cli/commands/shared/dry-run.ts",
+      "line": 54,
+      "title": "Dry-run detector ignores --dry-run=true/1",
+      "problem": "isDryRunInvocation only recognizes bare --dry-run and the =false/no forms; --dry-run=true and =1 are treated as not-a-dry-run, so bin/codemie.js startup writes run while Commander's options.dryRun still drives the action's preview branch and printEndCap (also keyed on isDryRunInvocation) is suppressed.",
+      "impact": "A --dry-run=true invocation runs pending migrations/update-check/upgrade-notice writes during a 'preview' and omits the end-cap.",
+      "recommendation": "Add --dry-run=true and --dry-run=1 to isDryRunInvocation's true branch (and test the negated/valued spellings together).",
+      "status": "resolved",
+      "check_notes": "isDryRunInvocation recognizes --dry-run=true and --dry-run=1",
+      "fix": {
+        "change": "isDryRunInvocation now treats --dry-run=true and --dry-run=1 as dry run (and --dry-run=0 as not)",
+        "test": "valued-spelling cases in src/cli/commands/shared/__tests__/dry-run.test.ts"
+      }
+    },
+    {
+      "id": "CR-011",
+      "kind": "code",
+      "severity": "major",
+      "triage": "patch",
+      "file": "src/cli/commands/__tests__/dry-run-registration.test.ts",
+      "title": "No tests assert dry-run planners skip mutations",
+      "problem": "The tier-1 planners (buildPreviewPlanInstall/Uninstall, previewLogin/Logout/Refresh, profile switch/delete/rename, describeConnect/Disconnect, docs install) are only checked for pass-through; no test asserts the real mutation helpers (installGlobal, switchProfile, connectTargets, handleLogin) are not called on the dry-run path.",
+      "impact": "A regression that makes a planner invoke the real mutation would ship a dry run that actually installs/connects/auths while the suite stays green.",
+      "recommendation": "Add negative-assertion tests (expect(...).not.toHaveBeenCalled()) covering each tier-1 planner's side-effect-freedom.",
+      "status": "resolved",
+      "check_notes": "dry-run-registration.test.ts adds negative-assertion planner tests",
+      "fix": {
+        "change": "Added negative-assertion tests verifying install/uninstall dry-run planners never invoke the real mutators (install/installGlobal/restoreCliBinLink/uninstall)",
+        "test": "tier-1 planner side-effect cases in src/cli/commands/__tests__/dry-run-registration.test.ts"
+      }
+    },
+    {
+      "id": "CR-012",
+      "kind": "code",
+      "severity": "major",
+      "triage": "patch",
+      "file": "src/providers/plugins/sso/session/processors/metrics/metrics-api-client.ts",
+      "title": "Dry-run analytics suppression unimplemented",
+      "problem": "The spec's dry-run gate for outbound analytics (metrics-api-client dryRun switch or a per-command negative statement) is not threaded and no negative statement is recorded.",
+      "impact": "Outbound analytics emission during a dry run is unverified — AC6/AC3 require it suppressed; reachability of an actual emission was not confirmed.",
+      "recommendation": "Wire the analytics dry-run gate (or record the per-command 'no analytics in dry run' statement) and verify install/setup/docs emit no analytics during --dry-run.",
+      "status": "wont-fix",
+      "check_notes": "metrics-api-client.ts not in changed_files; CLI --dry-run analytics gate not threaded",
+      "fix": {
+        "change": "Recorded the per-command no-analytics negative statement with a guard test (MetricsSender dryRun gate already exists; install/setup/docs describe seams never reach the metrics pipeline)",
+        "test": "metrics no-emission case in src/cli/commands/__tests__/dry-run-registration.test.ts"
+      },
+      "disposition": {
+        "rationale": "First-delivery commands (install/setup/docs) emit no analytics (verified during implementation), so analytics suppression holds in substance; persisting an explicit per-command negative statement is deferred to the follow-up story.",
+        "source": "hitl"
+      }
+    }
+  ],
+  "deferred": [],
+  "coverage_graded_at": "final",
+  "business_review": [
+    {
+      "kind": "spec",
+      "item": "AC1 — every user-facing command accepts --dry-run; hook/opencode-metrics/mcp-proxy/proxy-daemon reject it",
+      "status": "pass",
+      "notes": "registerDryRunFlags + DRY_RUN_REGISTRATIONS table; tool-invoked excluded and pinned by dry-run-registration.test.ts"
+    },
+    {
+      "kind": "spec",
+      "item": "AC2 — install/uninstall/setup/profile/proxy connect-disconnect/docs install print PlannedAction[] ending with 'Nothing was changed.'",
+      "status": "pass",
+      "notes": "buildPreviewPlan* + preview* + describe* all call printPlannedActions + printEndCap"
+    },
+    {
+      "kind": "spec",
+      "item": "AC3 — dry run writes no files/config, installs/removes nothing, no process start/stop, no credential store",
+      "status": "pass",
+      "notes": "bin/codemie.js isDryRun gate skips migration/update/upgrade-notice; describe* paths side-effect free"
+    },
+    {
+      "kind": "spec",
+      "item": "AC4 — prompting commands still ask, then preview without applying; setup credential questions asked",
+      "status": "partial",
+      "notes": "previewPluginSetup only prompts profile name; getCredentials described as 'would prompt' rather than asked"
+    },
+    {
+      "kind": "spec",
+      "item": "AC5 — read-only commands run normally with 'nothing to preview'; profile status does not re-authenticate",
+      "status": "partial",
+      "notes": "tier-2 footer then 'would re-authenticate' + end-cap on invalid auth: contradictory double footer"
+    },
+    {
+      "kind": "spec",
+      "item": "AC6 — preview-accuracy lookups permitted; analytics/credential-storage/server-side changes not",
+      "status": "partial",
+      "notes": "describe* static; analytics dry-run gate not threaded, no per-command negative statement recorded"
+    },
+    {
+      "kind": "spec",
+      "item": "AC7 — would-sign-in commands (login/refresh/status re-auth) describe without starting sign-in",
+      "status": "pass",
+      "notes": "previewLogin/previewRefresh/handleStatus(dryRun) return descriptions, never store credentials"
+    },
+    {
+      "kind": "spec",
+      "item": "AC8 — would-succeed dry run returns success; invalid input returns error + failure status",
+      "status": "pass",
+      "notes": "describeConnect reports 'No SSO credentials' + end-cap + exit 1; process.exitCode handled"
+    },
+    {
+      "kind": "spec",
+      "item": "AC9 — out of scope: full previews outside first delivery, machine-readable output, agent-chat dry runs",
+      "status": "pass",
+      "notes": "tier-3 prints 'not available yet'; no JSON output; AgentAdapter.run dryRun untouched"
+    }
+  ],
+  "standards_review": [
+    {
+      "kind": "commit-format",
+      "status": "pass",
+      "notes": "10 subjects in range match <type>(<scope>): <subject>; types feat (allowed), scopes cli/proxy/providers/agents in scope-enum, imperative subjects under 100 chars"
+    },
+    {
+      "kind": "code-quality",
+      "status": "pass",
+      "notes": "new dry-run core, describe seams and describeCredentialSideEffects use explicit return types, .js import extensions, interface shapes, camelCase/PascalCase naming; no console.log debug output"
+    },
+    {
+      "kind": "security",
+      "status": "pass",
+      "notes": "resolved against .ai-run/guides/security/security-practices.md. describe seams read-only; sanitizeLogArgs on log paths; no hardcoded secrets introduced"
+    }
+  ],
+  "final_round": {
+    "decision": "request-changes",
+    "rationale": "Full lens roster ran parseable and standards reported no coverage gap (oversized: false); no lens failed or truncated. CR-006 (profile status re-auth vs its tier-2 'does not modify anything' footer) needs human intent to resolve, and the standards security row's 'presence-only' claim is contradicted by CR-008's credential deletion — together these cap confidence at low. 3 claims were filtered as noise (ACP/OTLP subclass compile breakage; legacy-command false end-cap; install bin-link over-report) and nothing was deferred.",
+    "confidence": "low",
+    "risk_flags": [
+      "auth",
+      "security",
+      "migration"
+    ]
+  }
+}
