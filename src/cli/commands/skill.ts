@@ -4,6 +4,7 @@ import chalk from 'chalk';
 import { SkillManager, SkillSync } from '../../skills/index.js';
 import { logger } from '../../utils/logger.js';
 import type { Skill } from '../../skills/index.js';
+import { printEndCap } from './shared/dry-run.js';
 
 /**
  * Format skill source with color
@@ -276,6 +277,10 @@ function createSyncCommand(): Command {
         }
 
         console.log('');
+
+        if (options.dryRun) {
+          printEndCap();
+        }
 
         if (result.errors.length > 0) {
           process.exit(1);

@@ -11,6 +11,7 @@ import { LogFollower } from './follower.js';
 import { LogCleaner } from './cleaner.js';
 import type { LogOptions, LogFilter, SessionListEntry } from './types.js';
 import { logger } from '../../../utils/logger.js';
+import { printEndCap } from '../shared/dry-run.js';
 
 export function createLogCommand(): Command {
   const command = new Command('log');
@@ -145,6 +146,9 @@ export function createLogCommand(): Command {
     .action(async (options: LogOptions) => {
       try {
         await cleanLogs(options);
+        if (options.dryRun) {
+          printEndCap();
+        }
       } catch (error) {
         logger.error('Clean logs failed:', error);
         console.error(chalk.red(`\n✗ Failed: ${error instanceof Error ? error.message : String(error)}\n`));

@@ -19,6 +19,7 @@ import {
   type VCSProvider,
   type WorkflowInstallOptions,
 } from '../../workflows/index.js';
+import { printEndCap } from './shared/dry-run.js';
 
 export function createWorkflowCommand(): Command {
   const workflow = new Command('workflow')
@@ -366,6 +367,10 @@ Configuration Guide:
           console.log(chalk.white('  1. Configure required secrets in your repository settings'));
           console.log(chalk.white('  2. Commit and push the workflow file'));
           console.log(chalk.white('  3. The workflow will run automatically based on configured triggers\n'));
+        }
+
+        if (options.dryRun) {
+          printEndCap();
         }
       } catch (error) {
         spinner.fail(chalk.red('Installation failed'));

@@ -19,6 +19,7 @@ import { basename, dirname } from 'path';
 import type { SessionMetric } from '../../providers/plugins/sso/session/processors/metrics/metrics-types.js';
 import { CODEMIE_ENDPOINTS } from '../../providers/plugins/sso/sso.http-client.js';
 import { detectGitBranch } from '../../utils/processes.js';
+import { printEndCap } from './shared/dry-run.js';
 
 export function createTestMetricsCommand(): Command {
   const command = new Command('test-metrics');
@@ -34,6 +35,9 @@ export function createTestMetricsCommand(): Command {
     .action(async (options: { agent: string; model: string; clientType?: string; project?: string; dryRun?: boolean; verbose?: boolean }) => {
       try {
         await runTestMetrics(options);
+        if (options.dryRun) {
+          printEndCap();
+        }
       } catch (error) {
         console.error(chalk.red('Failed to send test metric'));
         if (error instanceof Error) {
