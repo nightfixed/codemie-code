@@ -37,13 +37,16 @@ export function createInstallCommand(): Command {
         console.log(chalk.gray('🔍 Verbose mode enabled - showing detailed logs\n'));
       }
 
-      // Dry run: describe the plan and stop before any side effect.
-      if (options?.dryRun) {
-        await buildPreviewPlanInstall(name);
-        return;
-      }
-
       try {
+        // Dry run: describe the plan and stop before any side effect. Inside the
+        // try so a throw from a describe implementation is caught, printed, and
+        // still ends with the failure end-cap instead of becoming an unhandled
+        // rejection (AC8).
+        if (options?.dryRun) {
+          await buildPreviewPlanInstall(name);
+          return;
+        }
+
         // If no name provided, show available agents and frameworks
         if (!name) {
           const agents = AgentRegistry.getManageableAgents();

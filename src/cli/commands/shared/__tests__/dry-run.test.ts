@@ -21,6 +21,22 @@ describe('isDryRunInvocation', () => {
     expect(isDryRunInvocation(['--dry-run=false'])).toBe(false);
   });
 
+  it('is true for --dry-run=true', () => {
+    expect(isDryRunInvocation(['install', 'x', '--dry-run=true'])).toBe(true);
+  });
+
+  it('is true for --dry-run=1', () => {
+    expect(isDryRunInvocation(['install', 'x', '--dry-run=1'])).toBe(true);
+  });
+
+  it('is false for --dry-run=0', () => {
+    expect(isDryRunInvocation(['--dry-run=0'])).toBe(false);
+  });
+
+  it('lets a later negation beat an earlier valued dry-run flag', () => {
+    expect(isDryRunInvocation(['--dry-run=true', '--dry-run=false'])).toBe(false);
+  });
+
   it('is false for a --task invocation', () => {
     expect(isDryRunInvocation(['--task', 'x'])).toBe(false);
   });

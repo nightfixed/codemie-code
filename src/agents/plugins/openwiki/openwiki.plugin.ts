@@ -1,5 +1,5 @@
 import type { AgentConfig, AgentMetadata } from '../../core/types.js';
-import type { PlannedAction } from '@/cli/commands/shared/dry-run.js';
+import type { PlannedAction } from '@/types/dry-run.js';
 import { BaseAgentAdapter } from '../../core/BaseAgentAdapter.js';
 
 /**

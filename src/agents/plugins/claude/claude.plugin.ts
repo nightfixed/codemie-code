@@ -4,7 +4,7 @@ import type {
   ResumeOwnershipResult,
 } from '../../core/types.js';
 import { BaseAgentAdapter } from '../../core/BaseAgentAdapter.js';
-import type { PlannedAction } from '@/cli/commands/shared/dry-run.js';
+import type { PlannedAction } from '@/types/dry-run.js';
 import { ClaudeSessionAdapter } from './claude.session.js';
 import { resolveClaudeModel, listRouterModelIds, buildModelLabelMap, buildModelPickerOptions, type ClaudeModelTier } from './claude.models.js';
 import { writeConfigToTempFile } from '../../core/temp-config.js';

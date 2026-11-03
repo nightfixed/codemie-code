@@ -3,7 +3,7 @@
  */
 
 import type { SessionAdapter } from './session/BaseSessionAdapter.js';
-import type { PlannedAction } from '@/cli/commands/shared/dry-run.js';
+import type { PlannedAction } from '@/types/dry-run.js';
 
 /**
  * Post-install hint - simple text lines shown after installation

@@ -1,6 +1,7 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
 import inquirer from 'inquirer';
+import { join } from 'path';
 import { ConfigLoader } from '../../../utils/config.js';
 import { logger } from '../../../utils/logger.js';
 import { getCodemiePath } from '../../../utils/paths.js';
@@ -76,11 +77,14 @@ async function listProfiles(): Promise<void> {
 
 /**
  * Resolves the config file a profile mutation would write: the workspace-local
- * config when it exists, the global config otherwise.
+ * config when it exists, the global config otherwise. The local branch mirrors
+ * `ConfigLoader.LOCAL_CONFIG` (`.codemie/codemie-cli.config.json`) joined with
+ * `path.join` so the preview names exactly the file `switchProfile`/
+ * `deleteProfile` write, on every platform.
  */
-function resolveProfileConfigPath(hasLocal: boolean, workingDir: string): string {
+export function resolveProfileConfigPath(hasLocal: boolean, workingDir: string): string {
   return hasLocal
-    ? `${workingDir}/.codemie/codemie-cli.config.json`
+    ? join(workingDir, '.codemie', 'codemie-cli.config.json')
     : getCodemiePath('codemie-cli.config.json');
 }
 
@@ -104,12 +108,23 @@ function createStatusCommand(): Command {
   command
     .description('Show active profile and authentication status')
     .option('--show-sources', 'Show configuration with source attribution')
-    .action(async (options: { showSources?: boolean; dryRun?: boolean }) => {
+    .action(async (
+      _options: { showSources?: boolean; dryRun?: boolean },
+      statusCommand: Command
+    ) => {
+      // `--dry-run` is registered on `profile` as well as on `status`, so the
+      // value lands in the ancestor's opts for a nested invocation; read it via
+      // optsWithGlobals() so `profile status --dry-run` actually reaches the
+      // describe branch rather than falling through to the real re-auth.
+      const { showSources, dryRun } = statusCommand.optsWithGlobals() as {
+        showSources?: boolean;
+        dryRun?: boolean;
+      };
       try {
-        if (options.showSources) {
+        if (showSources) {
           await handleStatusWithSources();
         } else {
-          await handleStatus(options.dryRun);
+          await handleStatus(Boolean(dryRun));
         }
       } catch (error: unknown) {
         logger.error('Failed to get profile status:', error);
@@ -135,6 +150,9 @@ async function handleStatus(dryRun = false): Promise<void> {
   const activeProfileInfo = profiles.find(p => p.name === activeProfileName);
   if (!activeProfileInfo) {
     console.log(chalk.yellow('\nNo active profile found. Run "codemie setup" to create one.\n'));
+    if (dryRun) {
+      printEndCap();
+    }
     return;
   }
 
@@ -193,6 +211,14 @@ async function handleStatus(dryRun = false): Promise<void> {
   ProfileDisplay.formatStatus(activeProfileInfo, authStatus, config.codeMieUrl);
   console.log(chalk.dim(`\n  Configuration ${sourceIndicator}`));
   console.log(chalk.dim(`  Use --show-sources to see detailed source attribution\n`));
+
+  // Would-sign-in describe path: when auth is already valid (or the provider has
+  // no validation), the read-only display above is all a dry run does — nothing
+  // would change, so end with the end-cap. The invalid-auth branch returns
+  // earlier via printProfilePlan, which prints its own plan + end-cap.
+  if (dryRun) {
+    printEndCap();
+  }
 }
 
 /**

@@ -1,5 +1,5 @@
 import type { AgentMetadata, HookTransformer } from '../../core/types.js';
-import type { PlannedAction } from '@/cli/commands/shared/dry-run.js';
+import type { PlannedAction } from '@/types/dry-run.js';
 import { BaseAgentAdapter } from '../../core/BaseAgentAdapter.js';
 import { GeminiHookTransformer } from './gemini.hook-transformer.js';
 import { GeminiSessionAdapter } from './gemini.session-adapter.js';

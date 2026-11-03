@@ -179,9 +179,16 @@ export class CodeMieSSO {
    *
    * @param url - Base URL or API URL to look up credentials for
    * @param allowFallback - Whether to fall back to global credentials (default: true)
+   * @param deleteExpired - Whether an expired entry is cleared from the store
+   *   (default: true). Pass `false` for a non-mutating presence check, e.g. a
+   *   dry run.
    * @returns Credentials if found and valid, null otherwise
    */
-  async getStoredCredentials(url?: string, allowFallback = true): Promise<SSOCredentials | null> {
+  async getStoredCredentials(
+    url?: string,
+    allowFallback = true,
+    deleteExpired = true
+  ): Promise<SSOCredentials | null> {
     if (!url) {
       const store = CredentialStore.getInstance();
       return store.retrieveSSOCredentials();
@@ -210,7 +217,9 @@ export class CodeMieSSO {
 
     // Check if credentials are expired
     if (credentials && credentials.expiresAt && Date.now() > credentials.expiresAt) {
-      await store.clearSSOCredentials(url);
+      if (deleteExpired) {
+        await store.clearSSOCredentials(url);
+      }
       return null;
     }
 

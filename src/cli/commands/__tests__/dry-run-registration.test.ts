@@ -68,11 +68,22 @@ const spinner = {
 };
 vi.mock('ora', () => ({ default: vi.fn(() => spinner) }));
 
+const metricsMock = vi.hoisted(() => ({
+  sendMetric: vi.fn(),
+  MetricsSender: vi.fn(),
+}));
+vi.mock('@/providers/plugins/sso/session/processors/metrics/metrics-api-client.js', () => metricsMock);
+
 import { buildProgram } from '@/cli/program.js';
 import {
   registerDryRunFlags,
   resolveDryRunTier,
 } from '@/cli/commands/shared/dry-run-registration.js';
+import { restoreCliBinLink } from '@/utils/cli-bin.js';
+import { buildSetupPlan } from '../setup.js';
+import type { ProviderSetupSteps } from '@/providers/index.js';
+import { ConfigLoader } from '@/utils/config.js';
+import { ProviderRegistry } from '@/providers/core/registry.js';
 
 // ---------------------------------------------------------------------------
 // Constants and helpers.
@@ -303,7 +314,7 @@ describe('registerDryRunFlags', () => {
       ['docs install', 1],
       ['docs uninstall', 3],
       ['profile', 2],
-      ['profile status', 2],
+      ['profile status', 1],
       ['docs', 2],
       ['docs list', 2],
       ['proxy status', 2],
@@ -392,6 +403,154 @@ describe('registerDryRunFlags', () => {
         command?.options.some((option) => option.long === '--dry-run'),
         path
       ).toBe(true);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Side-effect freedom: the tier-1 planners describe mutations and must never
+// invoke the real mutators (install/uninstall/switch/etc.) or emit analytics.
+// ---------------------------------------------------------------------------
+
+describe('tier-1 dry-run planners never apply mutations', () => {
+  it('install --dry-run describes the agent without installing or restoring the bin link', async () => {
+    const program = freshProgram();
+    const install = vi.fn(async () => {});
+    registryMock.getAgent.mockReturnValue({
+      name: 'acme',
+      displayName: 'Acme',
+      describeInstall: () => [{ kind: 'install', label: 'install acme', targets: ['acme'] }],
+      install,
+    });
+
+    await parse(program, ['install', 'acme', '--dry-run']);
+
+    expect(registryMock.getAgent).toHaveBeenCalled();
+    expect(install).not.toHaveBeenCalled();
+    expect(processesMock.installGlobal).not.toHaveBeenCalled();
+    expect(vi.mocked(restoreCliBinLink)).not.toHaveBeenCalled();
+    expect(io.output()).toContain('install acme');
+  });
+
+  it('uninstall --dry-run describes the agent without uninstalling it', async () => {
+    const program = freshProgram();
+    const uninstall = vi.fn(async () => {});
+    registryMock.getAgent.mockReturnValue({
+      name: 'acme',
+      displayName: 'Acme',
+      describeUninstall: () => [{ kind: 'remove', label: 'remove acme', targets: ['acme'] }],
+      uninstall,
+    });
+
+    await parse(program, ['uninstall', 'acme', '--dry-run']);
+
+    expect(uninstall).not.toHaveBeenCalled();
+    expect(io.output()).toContain('remove acme');
+  });
+
+  it('no tier-1 planner reaches the metrics pipeline', async () => {
+    const program = freshProgram();
+    registryMock.getAgent.mockReturnValue({
+      name: 'acme',
+      displayName: 'Acme',
+      describeInstall: () => [{ kind: 'install', label: 'install acme', targets: ['acme'] }],
+      install: vi.fn(),
+    });
+
+    await parse(program, ['install', 'acme', '--dry-run']);
+    await parse(program, ['uninstall', 'acme', '--dry-run']);
+
+    expect(metricsMock.sendMetric).not.toHaveBeenCalled();
+  });
+
+  it('install --dry-run catches a throwing describe and still prints the failure end-cap', async () => {
+    const originalArgv = [...process.argv];
+    process.argv = ['node', 'codemie', 'install', 'acme', '--dry-run'];
+    try {
+      const program = freshProgram();
+      registryMock.getAgent.mockReturnValue({
+        name: 'acme',
+        displayName: 'Acme',
+        describeInstall: () => {
+          throw new Error('boom');
+        },
+      });
+
+      await parse(program, ['install', 'acme', '--dry-run']);
+
+      expect(process.exitCode).toBe(1);
+      expect(io.errors()).toContain('Installation failed');
+      expect(io.output()).toContain('Nothing was changed.');
+    } finally {
+      process.argv = [...originalArgv];
+    }
+  });
+});
+
+describe('buildSetupPlan credential questions (AC4)', () => {
+  const steps = {
+    describeCredentialSideEffects: () => [],
+  } as unknown as ProviderSetupSteps;
+
+  it('describes sign-in instead of asking when no credential answers were gathered', () => {
+    const plan = buildSetupPlan('ai-run-sso', steps, 'p', false, 'global');
+
+    expect(JSON.stringify(plan)).toContain('would prompt for ai-run-sso credentials');
+    expect(JSON.stringify(plan)).not.toContain('with the credentials you provided');
+  });
+
+  it('previews the gathered answers instead of "would prompt" when credentials are present', () => {
+    const plan = buildSetupPlan('litellm', steps, 'p', false, 'global', {
+      baseUrl: 'http://proxy.example.com',
+      apiKey: 'sk-live',
+    });
+
+    expect(JSON.stringify(plan)).toContain(
+      'would configure litellm with the credentials you provided'
+    );
+    expect(JSON.stringify(plan)).not.toContain('would prompt for litellm credentials');
+    expect(JSON.stringify(plan)).toContain('apiKey (stored, masked)');
+  });
+});
+
+describe('profile status would-sign-in describe (CR-006 option B)', () => {
+  it('describes the would-be re-auth on invalid auth and never prints the read-only footer', async () => {
+    const previousExitCode = process.exitCode;
+    process.exitCode = 0;
+    const originalArgv = [...process.argv];
+    process.argv = ['node', 'codemie', 'profile', 'status', '--dry-run'];
+
+    const loadSpy = vi.spyOn(ConfigLoader, 'load').mockResolvedValue({
+      provider: 'ai-run-sso',
+      codeMieUrl: 'https://codemie.example.com',
+    });
+    const listSpy = vi.spyOn(ConfigLoader, 'listProfiles').mockResolvedValue([
+      { name: 'p', active: true, profile: { provider: 'ai-run-sso' }, source: 'global' },
+    ]);
+    const activeSpy = vi.spyOn(ConfigLoader, 'getActiveProfileName').mockResolvedValue('p');
+    const localSpy = vi.spyOn(ConfigLoader, 'hasLocalConfig').mockResolvedValue(false);
+    const providerSpy = vi.spyOn(ProviderRegistry, 'getProvider').mockReturnValue({
+      name: 'ai-run-sso',
+    });
+    const stepsSpy = vi.spyOn(ProviderRegistry, 'getSetupSteps').mockReturnValue({
+      validateAuth: async () => ({ valid: false }),
+    });
+
+    try {
+      const program = freshProgram();
+      await parse(program, ['profile', 'status', '--dry-run']);
+
+      expect(io.output()).toContain('would re-authenticate');
+      expect(io.output()).not.toContain('Nothing to preview');
+    } finally {
+      process.argv = [...originalArgv];
+      process.exitCode = previousExitCode;
+      loadSpy.mockRestore();
+      listSpy.mockRestore();
+      activeSpy.mockRestore();
+      localSpy.mockRestore();
+      providerSpy.mockRestore();
+      stepsSpy.mockRestore();
     }
   });
 });

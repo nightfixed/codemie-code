@@ -6,7 +6,7 @@
 
 import inquirer from 'inquirer';
 import type { ProviderCredentials, ProviderSetupSteps } from '../../core/types.js';
-import type { PlannedAction } from '@/cli/commands/shared/dry-run.js';
+import type { PlannedAction } from '@/types/dry-run.js';
 import { ProviderRegistry } from '../../core/registry.js';
 import type { CodeMieConfigOptions } from '../../../env/types.js';
 import { logger } from '../../../utils/logger.js';

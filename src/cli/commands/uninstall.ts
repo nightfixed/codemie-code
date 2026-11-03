@@ -21,13 +21,16 @@ export function createUninstallCommand(): Command {
     .description('Uninstall an AI agent or framework')
     .argument('[name]', 'Agent or framework name to uninstall (run without argument to see installed)')
     .action(async (name?: string, options?: { dryRun?: boolean }) => {
-      // Dry run: describe the plan and stop before any side effect.
-      if (options?.dryRun) {
-        await buildPreviewPlanUninstall(name);
-        return;
-      }
-
       try {
+        // Dry run: describe the plan and stop before any side effect. Inside the
+        // try so a throw from a describe implementation is caught, printed, and
+        // still ends with the failure end-cap instead of becoming an unhandled
+        // rejection (AC8).
+        if (options?.dryRun) {
+          await buildPreviewPlanUninstall(name);
+          return;
+        }
+
         // If no name provided, show installed agents and frameworks
         if (!name) {
           const installedAgents = await AgentRegistry.getInstalledAgents();

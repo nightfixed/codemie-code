@@ -1177,6 +1177,7 @@ export async function describeConnect(opts: ConnectOptions): Promise<void> {
 
   if (!hasAnyTarget(targets)) {
     console.log(TARGET_LIST);
+    printEndCap();
     return;
   }
 
@@ -1243,14 +1244,19 @@ export async function describeConnect(opts: ConnectOptions): Promise<void> {
 
     // Presence only: `verifySsoCredentials`' network round-trip is deliberately
     // skipped, so a dry run can never refresh or fail inside a token exchange.
+    // `nonMutating` additionally stops an expired entry from being deleted during
+    // this check — a dry run must never write the credential store (AC6/AC7).
     const { getStoredPlatformCredentials } = await import(
       '../../../providers/core/codemie-auth-helpers.js'
     );
-    const credentials = await getStoredPlatformCredentials({
-      provider: 'ai-run-sso',
-      baseUrl: config.baseUrl,
-      codeMieUrl: config.codeMieUrl,
-    });
+    const credentials = await getStoredPlatformCredentials(
+      {
+        provider: 'ai-run-sso',
+        baseUrl: config.baseUrl,
+        codeMieUrl: config.codeMieUrl,
+      },
+      { nonMutating: true }
+    );
 
     if (!credentials) {
       console.error(chalk.red(`✗ No SSO credentials found for profile '${profile}'.`));

@@ -5,7 +5,7 @@
  * Frameworks (like SpecKit, BMAD) can be initialized from agent shortcuts.
  */
 
-import type { PlannedAction } from '@/cli/commands/shared/dry-run.js';
+import type { PlannedAction } from '@/types/dry-run.js';
 
 /**
  * Framework Metadata - Configuration and capabilities

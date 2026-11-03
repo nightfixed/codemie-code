@@ -6,7 +6,7 @@
 
 import type { CodeMieConfigOptions } from '../../env/types.js';
 import type { ProviderLifecycleHooks } from '../../agents/core/types.js';
-import type { PlannedAction } from '@/cli/commands/shared/dry-run.js';
+import type { PlannedAction } from '@/types/dry-run.js';
 
 /**
  * Provider capabilities

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, afterEach } from 'vitest';
-import { buildProfileSelectionChoiceName, renderProfileSelectionUI, createProfileCommand } from '../index.js';
+import { join } from 'path';
+import { buildProfileSelectionChoiceName, renderProfileSelectionUI, createProfileCommand, resolveProfileConfigPath } from '../index.js';
 import { ProfileDisplay } from '../display.js';
 
 vi.mock('../../../../utils/config.js', () => ({
@@ -37,6 +38,20 @@ vi.mock('chalk', () => ({
     }),
   },
 }));
+
+describe('resolveProfileConfigPath', () => {
+  it('joins the local config path with path.join, matching ConfigLoader.LOCAL_CONFIG', () => {
+    expect(resolveProfileConfigPath(true, '/tmp/ws')).toBe(
+      join('/tmp/ws', '.codemie', 'codemie-cli.config.json')
+    );
+  });
+
+  it('handles a trailing-slash working directory without a double slash', () => {
+    expect(resolveProfileConfigPath(true, '/tmp/ws/')).toBe(
+      join('/tmp/ws', '.codemie', 'codemie-cli.config.json')
+    );
+  });
+});
 
 describe('profile command helpers', () => {
   it('aligns active and inactive profile selection choices with stable marker gutters', () => {

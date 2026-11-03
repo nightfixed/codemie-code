@@ -1,5 +1,5 @@
 import { join } from 'path';
-import type { PlannedAction } from '@/cli/commands/shared/dry-run.js';
+import type { PlannedAction } from '@/types/dry-run.js';
 import type { AgentMetadata, AgentConfig } from '../../core/types.js';
 import { logger } from '../../../utils/logger.js';
 import { getModelConfig, getChatCompletionsModelConfigs, getResponsesApiModelConfigs } from './opencode-model-configs.js';

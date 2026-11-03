@@ -10,7 +10,7 @@ import type {
   ProviderCredentials
 } from '../../core/types.js';
 import type { CodeMieConfigOptions } from '../../../env/types.js';
-import type { PlannedAction } from '@/cli/commands/shared/dry-run.js';
+import type { PlannedAction } from '@/types/dry-run.js';
 import { ProviderRegistry } from '../../core/registry.js';
 import { exec } from 'child_process';
 import { promisify } from 'util';

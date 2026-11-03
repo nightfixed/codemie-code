@@ -171,4 +171,32 @@ describe('CodexAcpPlugin', () => {
     installSpy.mockRestore();
     isInstalledSpy.mockRestore();
   });
+
+  it('describeInstall names the ACP npm package, not the plain Codex CLI', () => {
+    const plugin = new CodexAcpPlugin();
+
+    const plan = plugin.describeInstall();
+
+    expect(plan).toEqual([
+      expect.objectContaining({
+        kind: 'install',
+        targets: expect.arrayContaining(['@agentclientprotocol/codex-acp']),
+      }),
+    ]);
+    expect(JSON.stringify(plan)).not.toContain('@openai/codex');
+  });
+
+  it('describeUninstall names the ACP npm package, not the plain Codex CLI', () => {
+    const plugin = new CodexAcpPlugin();
+
+    const plan = plugin.describeUninstall();
+
+    expect(plan).toEqual([
+      expect.objectContaining({
+        kind: 'remove',
+        targets: expect.arrayContaining(['@agentclientprotocol/codex-acp']),
+      }),
+    ]);
+    expect(JSON.stringify(plan)).not.toContain('@openai/codex');
+  });
 });

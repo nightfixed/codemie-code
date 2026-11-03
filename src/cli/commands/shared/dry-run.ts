@@ -1,26 +1,15 @@
 /**
- * Shared dry-run core: the raw-argv predicate, the typed preview plan model, the
- * three footer strings, and the printed-once end-cap used by every `--dry-run`
- * command.
+ * Shared dry-run core: the raw-argv predicate, the three footer strings, and
+ * the printed-once end-cap used by every `--dry-run` command.
+ *
+ * The typed preview plan model (`PlanKind` / `PlannedAction`) lives in the
+ * layer-neutral `@/types/dry-run.js` module and is re-exported here so the CLI
+ * layer keeps a single import hub while `agents`/`providers`/`frameworks` can
+ * consume the model without importing a CLI command module.
  */
 
-export type PlanKind =
-  | 'write-file'
-  | 'remove'
-  | 'install'
-  | 'exec'
-  | 'start-process'
-  | 'stop-process'
-  | 'store-credential'
-  | 'network';
-
-export interface PlannedAction {
-  kind: PlanKind;
-  /** Plain-language action sentence. */
-  label: string;
-  /** Files, bin links, config entries or commands the action would touch. */
-  targets: string[];
-}
+import type { PlannedAction } from '@/types/dry-run.js';
+export type { PlanKind, PlannedAction } from '@/types/dry-run.js';
 
 const FOOTERS: Record<1 | 2 | 3, string> = {
   1: 'Nothing was changed.',
@@ -38,8 +27,9 @@ let exitFallbackRegistered = false;
  *
  * The scan stops at the `--` delimiter and at `--task <value>` so that
  * pass-through arguments and task-flag values can never be mistaken for the
- * flag. `--dry-run=false` and `--no-dry-run` count as not-a-dry-run; a later
- * negation wins over an earlier bare flag.
+ * flag. `--dry-run=true`/`--dry-run=1` count as a dry run (a value-form flag is
+ * still a dry run), while `--dry-run=false`/`--dry-run=0` and `--no-dry-run`
+ * count as not-a-dry-run; a later negation wins over an earlier bare flag.
  */
 export function isDryRunInvocation(argv: string[]): boolean {
   let dryRun = false;
@@ -51,9 +41,13 @@ export function isDryRunInvocation(argv: string[]): boolean {
     if (token === '--task' || token.startsWith('--task=')) {
       break;
     }
-    if (token === '--dry-run') {
+    if (token === '--dry-run' || token === '--dry-run=true' || token === '--dry-run=1') {
       dryRun = true;
-    } else if (token === '--dry-run=false' || token === '--no-dry-run') {
+    } else if (
+      token === '--dry-run=false' ||
+      token === '--dry-run=0' ||
+      token === '--no-dry-run'
+    ) {
       dryRun = false;
     }
   }

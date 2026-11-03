@@ -15,7 +15,7 @@ import type {
 import { ProviderName, AuthMethod } from '@/providers/core/types.js';
 import { JWT_TOKEN_DEFAULT_ENV_VAR, resolveJwtToken, resolveJwtTokenEnvVar } from '@/providers/plugins/jwt/jwt.utils.js';
 import type { CodeMieConfigOptions } from '@/env/types.js';
-import type { PlannedAction } from '@/cli/commands/shared/dry-run.js';
+import type { PlannedAction } from '@/types/dry-run.js';
 import { ensureApiBase } from '../../core/codemie-auth-helpers.js';
 
 export const JWTBearerSetupSteps: ProviderSetupSteps = {

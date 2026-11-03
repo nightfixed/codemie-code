@@ -1,5 +1,5 @@
 import { AgentMetadata, AgentAdapter, AgentConfig, MCPConfigSummary, ExtensionsScanSummary, VersionCompatibilityResult, AgentAdapterType } from './types.js';
-import type { PlannedAction } from '@/cli/commands/shared/dry-run.js';
+import type { PlannedAction } from '@/types/dry-run.js';
 import * as npm from '../../utils/processes.js';
 import { NpmError, createErrorContext } from '../../utils/errors.js';
 import {

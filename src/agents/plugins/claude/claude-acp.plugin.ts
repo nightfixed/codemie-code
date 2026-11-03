@@ -1,4 +1,5 @@
 import type {AgentMetadata} from '../../core/types.js';
+import type { PlannedAction } from '@/types/dry-run.js';
 import {ClaudePlugin, ClaudePluginMetadata} from './claude.plugin.js';
 
 /**
@@ -96,5 +97,38 @@ export class ClaudeAcpPlugin extends ClaudePlugin {
    */
   async getVersion(): Promise<string | null> {
     return null;
+  }
+
+  /**
+   * Describe what the npm-only ACP install() would do. Overrides the inherited
+   * Claude plugin's native-installer description, which this adapter never runs.
+   */
+  describeInstall(): PlannedAction[] {
+    return [
+      {
+        kind: 'install',
+        label: 'Install the Claude Code ACP adapter with npm',
+        targets: [
+          '@agentclientprotocol/claude-agent-acp',
+          'global npm bin link for claude-agent-acp',
+        ],
+      },
+    ];
+  }
+
+  /**
+   * Describe what the npm-only ACP uninstall() would do, mirroring describeInstall.
+   */
+  describeUninstall(): PlannedAction[] {
+    return [
+      {
+        kind: 'remove',
+        label: 'Uninstall the global Claude Code ACP npm package',
+        targets: [
+          '@agentclientprotocol/claude-agent-acp',
+          'global npm bin link for claude-agent-acp',
+        ],
+      },
+    ];
   }
 }

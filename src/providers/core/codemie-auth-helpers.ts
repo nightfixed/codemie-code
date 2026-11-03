@@ -188,7 +188,10 @@ export function getPlatformUrlFromEnv(env: NodeJS.ProcessEnv): string | undefine
  * otherwise a dev login would be used for a prod profile. Loopback baseUrls are
  * exempt: inside an agent session baseUrl may be the local proxy URL.
  */
-async function lookupStoredCredentials(src: PlatformUrlSource): Promise<PlatformCredentials | null> {
+async function lookupStoredCredentials(
+  src: PlatformUrlSource,
+  opts: { nonMutating?: boolean } = {}
+): Promise<PlatformCredentials | null> {
   const candidates = getPlatformUrlCandidates(src);
   if (candidates.length === 0) return null;
 
@@ -200,7 +203,9 @@ async function lookupStoredCredentials(src: PlatformUrlSource): Promise<Platform
   const { CodeMieSSO } = await import('../plugins/sso/sso.auth.js');
   const sso = new CodeMieSSO();
   for (const url of candidates) {
-    const credentials = await sso.getStoredCredentials(url);
+    const credentials = opts.nonMutating
+      ? await sso.getStoredCredentials(url, true, false)
+      : await sso.getStoredCredentials(url);
     if (!credentials) continue;
 
     if (
@@ -222,12 +227,14 @@ async function lookupStoredCredentials(src: PlatformUrlSource): Promise<Platform
 /**
  * Look up stored SSO credentials trying each platform URL candidate in order.
  * Note: an expired credential is deleted by getStoredCredentials, so a miss on
- * one candidate removes only that host's key.
+ * one candidate removes only that host's key — unless `opts.nonMutating` is set
+ * (dry runs use this), in which case the lookup never deletes anything.
  */
 export async function getStoredPlatformCredentials(
-  src: PlatformUrlSource
+  src: PlatformUrlSource,
+  opts: { nonMutating?: boolean } = {}
 ): Promise<PlatformCredentials | null> {
-  return lookupStoredCredentials(src);
+  return lookupStoredCredentials(src, opts);
 }
 
 export async function getStoredPlatformCredentialsFromEnv(

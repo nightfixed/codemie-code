@@ -51,11 +51,18 @@ export function createDocsCommand(): Command {
         return;
       }
 
-      // Dry run: describe the plan and stop before any side effect.
+      // Dry run: describe the plan and stop before any side effect. A throw from
+      // describeInstall is caught so the failure still prints the end-cap (AC8).
       if (options?.dryRun) {
-        printPlannedActions(tool.describeInstall());
-        printEndCap();
-        process.exitCode = 0;
+        try {
+          printPlannedActions(tool.describeInstall());
+          printEndCap();
+          process.exitCode = 0;
+        } catch (error) {
+          logger.error(getErrorMessage(error));
+          printEndCap();
+          process.exitCode = 1;
+        }
         return;
       }
 

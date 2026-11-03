@@ -1,5 +1,6 @@
 import type { AgentMetadata } from '../../core/types.js';
 import type { BaseAgentAdapter } from '../../core/BaseAgentAdapter.js';
+import type { PlannedAction } from '@/types/dry-run.js';
 import { CodexPlugin, CodexPluginMetadata } from './codex.plugin.js';
 
 /**
@@ -169,5 +170,38 @@ export class CodexAcpPlugin extends CodexPlugin {
    */
   async getVersion(): Promise<string | null> {
     return null;
+  }
+
+  /**
+   * Describe what the npm-only ACP install() would do. Overrides the inherited
+   * Codex plugin's plain-Codex description, which this adapter never runs.
+   */
+  describeInstall(): PlannedAction[] {
+    return [
+      {
+        kind: 'install',
+        label: 'Install the Codex ACP adapter with npm',
+        targets: [
+          '@agentclientprotocol/codex-acp',
+          'global npm bin link for codex-acp',
+        ],
+      },
+    ];
+  }
+
+  /**
+   * Describe what the npm-only ACP uninstall() would do, mirroring describeInstall.
+   */
+  describeUninstall(): PlannedAction[] {
+    return [
+      {
+        kind: 'remove',
+        label: 'Uninstall the global Codex ACP npm package',
+        targets: [
+          '@agentclientprotocol/codex-acp',
+          'global npm bin link for codex-acp',
+        ],
+      },
+    ];
   }
 }

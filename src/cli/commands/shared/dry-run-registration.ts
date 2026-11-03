@@ -79,7 +79,10 @@ export const DRY_RUN_REGISTRATIONS: DryRunRegistration[] = [
   { factory: createProfileCommand, subcommandPath: 'switch', tier: 1 },
   { factory: createProfileCommand, subcommandPath: 'delete', tier: 1 },
   { factory: createProfileCommand, subcommandPath: 'rename', tier: 1 },
-  { factory: createProfileCommand, subcommandPath: 'status', tier: 2 },
+  // `profile status` is a would-sign-in describe command (option B): on invalid
+  // auth it describes the re-authentication it would start; it is not read-only
+  // tier 2, so no "Nothing to preview" footer ever prints for it.
+  { factory: createProfileCommand, subcommandPath: 'status', tier: 1 },
   // `proxy` is mostly process mutation (start/stop/restart/analytics); only
   // connect/disconnect are first-delivery previews and status/inspect are
   // read-only.

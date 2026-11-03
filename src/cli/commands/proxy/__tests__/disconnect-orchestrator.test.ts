@@ -27,6 +27,23 @@ describe('disconnectTargets', () => {
     expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('--codex-desktop'));
   });
 
+  it('describeDisconnect prints the end-cap when no target is selected', async () => {
+    const originalArgv = [...process.argv];
+    process.argv = ['node', 'codemie', 'proxy', 'disconnect', '--dry-run'];
+    const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+
+    try {
+      const { describeDisconnect } = await import('../disconnect-orchestrator.js');
+
+      await describeDisconnect({ targets: {} });
+
+      expect(writeSpy).toHaveBeenCalledWith('Nothing was changed.\n');
+    } finally {
+      process.argv = [...originalArgv];
+      writeSpy.mockRestore();
+    }
+  });
+
   it('reports the removal for the Codex desktop target', async () => {
     vi.doMock('../connectors/codex-desktop.js', () => ({
       removeCodexDesktopConfig: vi.fn().mockResolvedValue({

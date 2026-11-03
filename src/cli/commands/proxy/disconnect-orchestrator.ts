@@ -186,6 +186,7 @@ export async function describeDisconnect(opts: DisconnectOptions): Promise<void>
   const { targets } = opts;
   if (!targets.codexDesktop && !targets.claudeCodeOtlp && !targets.copilotChatOtlp && !targets.copilotCliOtlp) {
     console.log(DISCONNECT_TARGET_LIST);
+    printEndCap();
     return;
   }
 

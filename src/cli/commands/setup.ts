@@ -6,7 +6,7 @@ import { ConfigLoader } from '../../utils/config.js';
 import { logger } from '../../utils/logger.js';
 import { getCodemiePath } from '../../utils/paths.js';
 import { ProviderRegistry } from '../../providers/index.js';
-import type { ProviderSetupSteps } from '../../providers/index.js';
+import type { ProviderSetupSteps, ProviderCredentials } from '../../providers/index.js';
 import {
   getAllProviderChoices,
   displaySetupSuccess,
@@ -431,8 +431,20 @@ async function previewPluginSetup(
   // Kept so the preview names the profile that would actually be written.
   const finalProfileName = profileName ?? await promptForProfileName(providerName);
 
+  // AC4: prompting commands still ask their credential questions during a dry
+  // run, then preview the result without applying it. For non-SSO providers
+  // `getCredentials` is a series of prompts (base URL, API key, …) with no
+  // writes, so the answers are gathered and previewed. SSO's "credential
+  // question" IS a browser sign-in that stores credentials, which a dry run
+  // describes instead of starting (AC3/AC7).
+  const providerTemplate = ProviderRegistry.getProvider(providerName);
+  const credentials =
+    providerTemplate?.authType !== 'sso' && typeof setupSteps.getCredentials === 'function'
+      ? await setupSteps.getCredentials(isUpdate)
+      : undefined;
+
   printPlannedActions(
-    buildSetupPlan(providerName, setupSteps, finalProfileName, isUpdate, storageLocation)
+    buildSetupPlan(providerName, setupSteps, finalProfileName, isUpdate, storageLocation, credentials)
   );
   printEndCap();
   process.exitCode = 0;
@@ -446,12 +458,13 @@ async function previewPluginSetup(
  * none of it can run without the credentials (and therefore the sign-in) that
  * the dry run deliberately skips — so no model name is ever claimed.
  */
-function buildSetupPlan(
+export function buildSetupPlan(
   providerName: string,
   setupSteps: ProviderSetupSteps,
   profileName: string,
   isUpdate: boolean,
-  storageLocation: 'global' | 'local'
+  storageLocation: 'global' | 'local',
+  credentials?: ProviderCredentials
 ): PlannedAction[] {
   const globalConfigPath = getCodemiePath('codemie-cli.config.json');
   const configPath = storageLocation === 'local'
@@ -459,11 +472,24 @@ function buildSetupPlan(
     : globalConfigPath;
 
   const plan: PlannedAction[] = [
-    {
-      kind: 'network',
-      label: `would prompt for ${providerName} credentials`,
-      targets: [providerName]
-    },
+    // When the credential questions were asked, the preview reports the answers
+    // it would act on; otherwise (SSO, or no prompts) it says it would prompt.
+    credentials
+      ? {
+          kind: 'network',
+          label: `would configure ${providerName} with the credentials you provided`,
+          targets: [
+            credentials.baseUrl ?? providerName,
+            credentials.apiKey && credentials.apiKey !== 'not-required'
+              ? 'apiKey (stored, masked)'
+              : 'no API key needed'
+          ]
+        }
+      : {
+          kind: 'network',
+          label: `would prompt for ${providerName} credentials`,
+          targets: [providerName]
+        },
     ...setupSteps.describeCredentialSideEffects(),
     // The model catalog is only reachable with the credentials gathered above;
     // naming a model here would claim something this run cannot resolve.

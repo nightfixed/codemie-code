@@ -5,7 +5,7 @@
  */
 
 import type { ProviderSetupSteps, ProviderCredentials } from '../../core/types.js';
-import type { PlannedAction } from '@/cli/commands/shared/dry-run.js';
+import type { PlannedAction } from '@/types/dry-run.js';
 import { LiteLLMTemplate } from './litellm.template.js';
 import inquirer from 'inquirer';
 

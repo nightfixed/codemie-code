@@ -10,7 +10,7 @@
  */
 
 import { commandExists, exec } from '../../utils/processes.js';
-import type { PlannedAction } from '@/cli/commands/shared/dry-run.js';
+import type { PlannedAction } from '@/types/dry-run.js';
 import { logger } from '../../utils/logger.js';
 import { BaseFrameworkAdapter } from '../core/BaseFrameworkAdapter.js';
 import type { FrameworkInitOptions, FrameworkMetadata } from '../core/types.js';

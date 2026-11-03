@@ -27,68 +27,21 @@ if (isHookProcess) {
   logger.setConsoleStream(null);
 }
 
-// Imported after the console switch: their module graph logs at import time.
-const { MigrationRunner } = await import('../dist/migrations/index.js');
-const { checkAndPromptForUpdate } = await import('../dist/utils/cli-updater.js');
-const { isDryRunInvocation } = await import('../dist/cli/commands/shared/dry-run.js');
+// Imported after the console switch: its module graph logs at import time.
+const { runStartupSideEffects } = await import('../dist/cli/startup.js');
 
 // `--dry-run` promises that nothing changes on the machine, so the start-up side
 // effects that write (pending migrations, the interactive update prompt, and the
 // once-per-upgrade notice that records the seen version) are all skipped for it.
-const isDryRun = isDryRunInvocation(process.argv.slice(2));
-
-// Auto-run pending migrations (happens at startup)
-// Migrations are tracked in ~/.codemie/migrations.json and only run once
-try {
-  if (!isDryRun && await MigrationRunner.hasPending()) {
-    await MigrationRunner.runPending({
-      silent: isHookProcess  // Show migration messages to user, except in a hook
-    });
-  }
-} catch (error) {
-  // Don't block CLI if migration fails
-  if (isHookProcess) {
-    logger.warn('Warning: Migration failed:', error.message);
-  } else {
-    console.error('Warning: Migration failed:', error.message);
-  }
-}
-
-// Check for CLI updates (silent by default, configurable via CODEMIE_AUTO_UPDATE)
-// Skip in test environments to avoid timeouts and network calls during testing
-// Non-blocking: failures don't prevent CLI from running
+// The gating lives in src/cli/startup.ts (testable source); this wrapper passes
+// only the raw argv, hook flag and test-environment flag.
 const isTestEnvironment = process.env.NODE_ENV === 'test' || process.env.VITEST === 'true';
-if (!isTestEnvironment && !isHookProcess && !isDryRun) {
-  try {
-    await checkAndPromptForUpdate();
-  } catch (error) {
-    // Silently fail - don't block CLI startup
-  }
-}
 
-// Once-per-upgrade "What's new" notice from CHANGELOG.md (shares the
-// CODEMIE_TIPS off switch with feature tips). Non-blocking, minimal stdout.
-// shouldRunUpgradeNotice skips non-TTY stdout, `hook` invocations, and
-// invocations with their own output contract (--version/-V/--task/--help);
-// a hook process (`hook`, `sound`) never reaches it. A skipped notice writes
-// no marker, so it shows on the next run in a terminal. `--dry-run` skips it
-// too: the notice records the seen version, which is a write.
-if (!isTestEnvironment && !isHookProcess && !isDryRun) {
-  try {
-    const { readFileSync } = await import('node:fs');
-    const { shouldRunUpgradeNotice, showUpgradeNotice } = await import('../dist/utils/whatsnew.js');
-
-    if (shouldRunUpgradeNotice(process.argv.slice(2), process.stdout.isTTY)) {
-      const packageJson = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf-8'));
-      const currentVersion = packageJson.version;
-      if (currentVersion) {
-        showUpgradeNotice(currentVersion);
-      }
-    }
-  } catch (error) {
-    // Silently fail - don't block CLI startup
-  }
-}
+await runStartupSideEffects({
+  argv: process.argv.slice(2),
+  isHookProcess,
+  isTestEnvironment,
+});
 
 // Continue with normal CLI initialization
 import('../dist/cli/index.js').catch((error) => {

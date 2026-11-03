@@ -271,6 +271,25 @@ describe('connectTargets — no-write paths and daemon lifecycle', () => {
     expect(process.exitCode).toBe(0);
   });
 
+  it('describeConnect prints the end-cap when no target is selected', async () => {
+    const originalArgv = [...process.argv];
+    process.argv = ['node', 'codemie', 'proxy', 'connect', '--dry-run'];
+    const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+
+    try {
+      const { describeConnect } = await import('../connect-orchestrator.js');
+
+      await describeConnect({ targets: {} } as ConnectOptions);
+
+      expect(console_.log()).toHaveBeenCalledWith(expect.stringContaining('--claude-desktop'));
+      expect(writeSpy).toHaveBeenCalledWith('Nothing was changed.\n');
+      expect(process.exitCode).toBe(0);
+    } finally {
+      process.argv = [...originalArgv];
+      writeSpy.mockRestore();
+    }
+  });
+
   it('does not start the proxy when Claude Code analytics confirmation is declined', async () => {
     await setupHappyMocks();
     const { checkStatus, spawnDaemon } = await import('../daemon-manager.js');

@@ -449,6 +449,15 @@ describe('getStoredPlatformCredentials', () => {
     expect(mockGetStoredCredentials.mock.calls.map(c => c[0])).toEqual([W]);
   });
 
+  it('passes deleteExpired=false when non-mutating so an expired entry is never cleared', async () => {
+    mockGetStoredCredentials.mockResolvedValue(null);
+    await getStoredPlatformCredentials(
+      { provider: 'ai-run-sso', baseUrl: P, codeMieUrl: W },
+      { nonMutating: true }
+    );
+    expect(mockGetStoredCredentials).toHaveBeenCalledWith(P, true, false);
+  });
+
   it('resolves from env using the profile baseUrl', async () => {
     mockGetStoredCredentials.mockResolvedValueOnce(creds);
     const env = { CODEMIE_PROFILE_CONFIG: JSON.stringify({ provider: 'ai-run-sso', baseUrl: P }) } as NodeJS.ProcessEnv;
