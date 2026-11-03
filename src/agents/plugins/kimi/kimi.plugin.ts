@@ -1,4 +1,5 @@
 import type { AgentConfig, AgentMetadata, HookTransformer } from '../../core/types.js';
+import type { PlannedAction } from '@/cli/commands/shared/dry-run.js';
 import { BaseAgentAdapter } from '../../core/BaseAgentAdapter.js';
 import type { SessionAdapter } from '../../core/session/BaseSessionAdapter.js';
 import type { BaseExtensionInstaller } from '../../core/extension/BaseExtensionInstaller.js';
@@ -284,6 +285,44 @@ export class KimiPlugin extends BaseAgentAdapter {
 
     // Remove npm wrapper package if present
     await super.uninstall();
+  }
+
+  describeInstall(): PlannedAction[] {
+    const installerUrl =
+      process.platform === 'win32' ? KIMI_INSTALLER_URLS.windows : KIMI_INSTALLER_URLS.macOS;
+
+    return [
+      {
+        kind: 'exec',
+        label: 'Download and run the Kimi Code native installer',
+        targets: [installerUrl],
+      },
+      {
+        kind: 'install',
+        label: 'Place the Kimi Code binary installed by the native installer',
+        targets: ['~/.kimi-code/bin/kimi'],
+      },
+    ];
+  }
+
+  describeUninstall(): PlannedAction[] {
+    return [
+      {
+        kind: 'remove',
+        label: 'Remove the Kimi Code native binaries',
+        targets: ['~/.kimi-code/bin/kimi', '~/.local/bin/kimi', 'kimi binary found on PATH'],
+      },
+      {
+        kind: 'remove',
+        label: 'Remove the ~/.kimi-code install directory when it is empty',
+        targets: ['~/.kimi-code'],
+      },
+      {
+        kind: 'remove',
+        label: 'Uninstall the global @moonshot-ai/kimi-code npm wrapper',
+        targets: ['@moonshot-ai/kimi-code', 'global npm bin link for kimi'],
+      },
+    ];
   }
 
   /**

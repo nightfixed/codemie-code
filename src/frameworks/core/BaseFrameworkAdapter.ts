@@ -9,6 +9,7 @@ import { existsSync } from 'fs';
 import { join } from 'path';
 import { exec } from '../../utils/processes.js';
 import { logger } from '../../utils/logger.js';
+import type { PlannedAction } from '@/cli/commands/shared/dry-run.js';
 import type {
   FrameworkAdapter,
   FrameworkMetadata,
@@ -90,9 +91,19 @@ export abstract class BaseFrameworkAdapter implements FrameworkAdapter {
   abstract install(): Promise<void>;
 
   /**
+   * Describe what install() would do, without side effects.
+   */
+  abstract describeInstall(): PlannedAction[];
+
+  /**
    * Uninstall framework CLI - must be implemented by subclasses
    */
   abstract uninstall(): Promise<void>;
+
+  /**
+   * Describe what uninstall() would do, without side effects.
+   */
+  abstract describeUninstall(): PlannedAction[];
 
   /**
    * Initialize framework - must be implemented by subclasses

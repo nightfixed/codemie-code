@@ -7,6 +7,7 @@
 import { existsSync } from 'fs';
 import { join } from 'path';
 import { exec, commandExists } from '../../utils/processes.js';
+import type { PlannedAction } from '@/cli/commands/shared/dry-run.js';
 import { logger } from '../../utils/logger.js';
 import { BaseFrameworkAdapter } from '../core/BaseFrameworkAdapter.js';
 import type { FrameworkInitOptions, FrameworkMetadata } from '../core/types.js';
@@ -80,6 +81,36 @@ export class CodebaseMemoryPlugin extends BaseFrameworkAdapter {
       this.logUninstallError(error);
       throw error;
     }
+  }
+
+  describeInstall(): PlannedAction[] {
+    const installerUrl =
+      process.platform === 'win32' ? WINDOWS_INSTALLER_URL : INSTALLER_URL;
+
+    return [
+      {
+        kind: 'exec',
+        label: 'Download and run the codebase-memory-mcp installer with the --ui variant',
+        targets: [installerUrl],
+      },
+      {
+        kind: 'install',
+        label: 'Install the codebase-memory-mcp binary',
+        targets: ['codebase-memory-mcp'],
+      },
+    ];
+  }
+
+  describeUninstall(): PlannedAction[] {
+    return [
+      {
+        kind: 'exec',
+        label:
+          'Run codebase-memory-mcp uninstall to remove its MCP client registrations ' +
+          '(the binary and local graph databases are left in place)',
+        targets: ['codebase-memory-mcp', 'MCP client registrations'],
+      },
+    ];
   }
 
   async init(agentName: string, options?: FrameworkInitOptions): Promise<void> {

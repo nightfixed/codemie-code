@@ -1,4 +1,5 @@
 import type { AgentConfig, AgentMetadata } from '../../core/types.js';
+import type { PlannedAction } from '@/cli/commands/shared/dry-run.js';
 import { BaseAgentAdapter } from '../../core/BaseAgentAdapter.js';
 
 /**
@@ -75,5 +76,25 @@ export const OpenWikiPluginMetadata: AgentMetadata = {
 export class OpenWikiPlugin extends BaseAgentAdapter {
   constructor(metadata: AgentMetadata = OpenWikiPluginMetadata) {
     super(metadata);
+  }
+
+  describeInstall(): PlannedAction[] {
+    return [
+      {
+        kind: 'install',
+        label: 'Install OpenWiki globally with npm',
+        targets: ['openwiki', 'global npm bin link for openwiki'],
+      },
+    ];
+  }
+
+  describeUninstall(): PlannedAction[] {
+    return [
+      {
+        kind: 'remove',
+        label: 'Uninstall the global OpenWiki npm package',
+        targets: ['openwiki', 'global npm bin link for openwiki'],
+      },
+    ];
   }
 }

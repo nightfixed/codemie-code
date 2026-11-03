@@ -10,6 +10,7 @@
  */
 
 import { commandExists, exec } from '../../utils/processes.js';
+import type { PlannedAction } from '@/cli/commands/shared/dry-run.js';
 import { logger } from '../../utils/logger.js';
 import { BaseFrameworkAdapter } from '../core/BaseFrameworkAdapter.js';
 import type { FrameworkInitOptions, FrameworkMetadata } from '../core/types.js';
@@ -73,6 +74,28 @@ export class GraphifyPlugin extends BaseFrameworkAdapter {
       this.logUninstallError(error);
       throw error;
     }
+  }
+
+  describeInstall(): PlannedAction[] {
+    return [
+      {
+        kind: 'install',
+        label:
+          'Install Graphify with pipx (falls back to pip3 install --user when pipx is unavailable)',
+        targets: [PIP_PACKAGE, 'graphify CLI', 'pipx or user pip environment'],
+      },
+    ];
+  }
+
+  describeUninstall(): PlannedAction[] {
+    return [
+      {
+        kind: 'remove',
+        label:
+          'Uninstall Graphify with pipx (falls back to pip3 uninstall -y when pipx is unavailable)',
+        targets: [PIP_PACKAGE, 'graphify CLI'],
+      },
+    ];
   }
 
   async init(agentName: string, options?: FrameworkInitOptions): Promise<void> {

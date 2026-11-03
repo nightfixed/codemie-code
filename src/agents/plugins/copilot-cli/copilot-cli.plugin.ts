@@ -1,4 +1,5 @@
 import type { AgentConfig, AgentMetadata } from '../../core/types.js';
+import type { PlannedAction } from '@/cli/commands/shared/dry-run.js';
 import { BaseAgentAdapter } from '../../core/BaseAgentAdapter.js';
 import type { SessionAdapter } from '../../core/session/BaseSessionAdapter.js';
 import { CopilotCliSessionAdapter } from './copilot-cli.session.js';
@@ -352,5 +353,25 @@ export class CopilotCliPlugin extends BaseAgentAdapter {
     } catch {
       return null;
     }
+  }
+
+  describeInstall(): PlannedAction[] {
+    return [
+      {
+        kind: 'install',
+        label: 'Install GitHub Copilot CLI globally with npm',
+        targets: ['@github/copilot', 'global npm bin link for copilot'],
+      },
+    ];
+  }
+
+  describeUninstall(): PlannedAction[] {
+    return [
+      {
+        kind: 'remove',
+        label: 'Uninstall the global GitHub Copilot CLI npm package',
+        targets: ['@github/copilot', 'global npm bin link for copilot'],
+      },
+    ];
   }
 }

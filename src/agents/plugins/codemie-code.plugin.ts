@@ -1,4 +1,5 @@
 import type { AgentMetadata, AgentConfig } from '../core/types.js';
+import type { PlannedAction } from '@/cli/commands/shared/dry-run.js';
 import { existsSync } from 'fs';
 import { logger } from '../../utils/logger.js';
 import { getModelConfig, getChatCompletionsModelConfigs, getResponsesApiModelConfigs } from './opencode/opencode-model-configs.js';
@@ -510,6 +511,38 @@ export class CodeMieCodePlugin extends BaseAgentAdapter {
       logger.warn(`[codemie-code] Binary still found after uninstall: ${remaining}`);
       logger.warn('[codemie-code] You may need to manually remove it');
     }
+  }
+
+  describeInstall(): PlannedAction[] {
+    const platformPkg = getPlatformPackage();
+
+    return [
+      {
+        kind: 'install',
+        label: 'Install the CodeMie OpenCode wrapper globally with npm',
+        targets: [
+          '@codemieai/codemie-opencode',
+          ...(platformPkg ? [platformPkg] : []),
+          'global npm bin link for codemie',
+        ],
+      },
+    ];
+  }
+
+  describeUninstall(): PlannedAction[] {
+    const platformPkg = getPlatformPackage();
+
+    return [
+      {
+        kind: 'remove',
+        label: 'Uninstall the CodeMie OpenCode wrapper and its platform binary',
+        targets: [
+          '@codemieai/codemie-opencode',
+          ...(platformPkg ? [platformPkg] : []),
+          'global npm bin link for codemie',
+        ],
+      },
+    ];
   }
 
   /**

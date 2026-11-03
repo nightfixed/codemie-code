@@ -1,4 +1,5 @@
 import { AgentMetadata, AgentAdapter, AgentConfig, MCPConfigSummary, ExtensionsScanSummary, VersionCompatibilityResult, AgentAdapterType } from './types.js';
+import type { PlannedAction } from '@/cli/commands/shared/dry-run.js';
 import * as npm from '../../utils/processes.js';
 import { NpmError, createErrorContext } from '../../utils/errors.js';
 import {
@@ -179,6 +180,16 @@ export abstract class BaseAgentAdapter implements AgentAdapter {
   }
 
   /**
+   * Describe what install() would do, without side effects.
+   */
+  abstract describeInstall(): PlannedAction[];
+
+  /**
+   * Describe what uninstall() would do, without side effects.
+   */
+  abstract describeUninstall(): PlannedAction[];
+
+  /**
    * Install agent via npm (latest version)
    */
   async install(): Promise<void> {
@@ -265,6 +276,14 @@ export abstract class BaseAgentAdapter implements AgentAdapter {
   async additionalInstallation(_options?: import('./types.js').AgentInstallationOptions): Promise<void> {
     // Default implementation: do nothing
     // Override in agent plugins to add custom installation logic
+  }
+
+  /**
+   * Describe what additionalInstallation() would do, without side effects.
+   * Default: no extra steps.
+   */
+  describeAdditionalInstallation(): PlannedAction[] {
+    return [];
   }
 
   /**

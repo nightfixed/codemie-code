@@ -5,6 +5,8 @@
  * Frameworks (like SpecKit, BMAD) can be initialized from agent shortcuts.
  */
 
+import type { PlannedAction } from '@/cli/commands/shared/dry-run.js';
+
 /**
  * Framework Metadata - Configuration and capabilities
  */
@@ -72,6 +74,18 @@ export interface FrameworkAdapter {
    * @returns Promise resolving when uninstallation completes
    */
   uninstall(): Promise<void>;
+
+  /**
+   * Pure, side-effect-free description of what install() would do.
+   * Never installs, writes, or reaches the network.
+   */
+  describeInstall(): PlannedAction[];
+
+  /**
+   * Pure, side-effect-free description of what uninstall() would do.
+   * Never removes, writes, or reaches the network.
+   */
+  describeUninstall(): PlannedAction[];
 
   /**
    * Initialize framework in current directory

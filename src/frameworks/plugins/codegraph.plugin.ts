@@ -7,6 +7,7 @@
  */
 
 import { exec, installGlobal, uninstallGlobal } from '../../utils/processes.js';
+import type { PlannedAction } from '@/cli/commands/shared/dry-run.js';
 import { logger } from '../../utils/logger.js';
 import { BaseFrameworkAdapter } from '../core/BaseFrameworkAdapter.js';
 import type { FrameworkInitOptions, FrameworkMetadata } from '../core/types.js';
@@ -56,6 +57,26 @@ export class CodegraphPlugin extends BaseFrameworkAdapter {
       this.logUninstallError(error);
       throw error;
     }
+  }
+
+  describeInstall(): PlannedAction[] {
+    return [
+      {
+        kind: 'install',
+        label: 'Install CodeGraph globally with npm',
+        targets: [NPM_PACKAGE, 'global npm bin link for codegraph'],
+      },
+    ];
+  }
+
+  describeUninstall(): PlannedAction[] {
+    return [
+      {
+        kind: 'remove',
+        label: 'Uninstall the global CodeGraph npm package',
+        targets: [NPM_PACKAGE, 'global npm bin link for codegraph'],
+      },
+    ];
   }
 
   async init(_agentName: string, options?: FrameworkInitOptions): Promise<void> {

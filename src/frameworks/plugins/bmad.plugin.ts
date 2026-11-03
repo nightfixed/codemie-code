@@ -12,6 +12,7 @@ import { existsSync } from 'fs';
 import { join } from 'path';
 import * as npm from '../../utils/processes.js';
 import { exec } from '../../utils/processes.js';
+import type { PlannedAction } from '@/cli/commands/shared/dry-run.js';
 import { logger } from '../../utils/logger.js';
 import { BaseFrameworkAdapter } from '../core/BaseFrameworkAdapter.js';
 import type { FrameworkMetadata, FrameworkInitOptions } from '../core/types.js';
@@ -64,6 +65,26 @@ export class BmadPlugin extends BaseFrameworkAdapter {
   async install(): Promise<void> {
     logger.info('BMAD uses npx on-demand. No installation required.');
     logger.info('Run initialization with: codemie-<agent> init bmad');
+  }
+
+  /**
+   * BMAD installs nothing ahead of time: `npx bmad-method` runs on demand.
+   */
+  describeInstall(): PlannedAction[] {
+    return [];
+  }
+
+  /**
+   * Describe what uninstall() would do, without side effects.
+   */
+  describeUninstall(): PlannedAction[] {
+    return [
+      {
+        kind: 'remove',
+        label: 'Remove the BMAD directories initialized in the current project',
+        targets: ['./.bmad', './_bmad'],
+      },
+    ];
   }
 
   /**

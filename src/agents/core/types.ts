@@ -3,6 +3,7 @@
  */
 
 import type { SessionAdapter } from './session/BaseSessionAdapter.js';
+import type { PlannedAction } from '@/cli/commands/shared/dry-run.js';
 
 /**
  * Post-install hint - simple text lines shown after installation
@@ -749,6 +750,16 @@ export interface AgentAdapter {
   readonly metadata: AgentMetadata;
   install(): Promise<void>;
   uninstall(): Promise<void>;
+  /**
+   * Pure, side-effect-free description of what install() would do.
+   * Never installs, writes, or reaches the network.
+   */
+  describeInstall(): PlannedAction[];
+  /**
+   * Pure, side-effect-free description of what uninstall() would do.
+   * Never removes, writes, or reaches the network.
+   */
+  describeUninstall(): PlannedAction[];
   isInstalled(): Promise<boolean>;
   run(args: string[], env?: Record<string, string>, options?: { dryRun?: boolean }): Promise<void>;
   getVersion(): Promise<string | null>;
@@ -786,6 +797,13 @@ export interface AgentAdapter {
    * @param options - Typed installation options (base or agent-specific)
    */
   additionalInstallation?(options?: AgentInstallationOptions): Promise<void>;
+
+  /**
+   * Pure, side-effect-free description of what additionalInstallation() would do.
+   * Agents with no extra installation steps may omit this; the base adapter
+   * returns an empty plan.
+   */
+  describeAdditionalInstallation?(): PlannedAction[];
 
   /**
    * Get hook transformer for this agent (optional)

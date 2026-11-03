@@ -1,4 +1,5 @@
 import { join } from 'path';
+import type { PlannedAction } from '@/cli/commands/shared/dry-run.js';
 import type { AgentMetadata, AgentConfig } from '../../core/types.js';
 import { logger } from '../../../utils/logger.js';
 import { getModelConfig, getChatCompletionsModelConfigs, getResponsesApiModelConfigs } from './opencode-model-configs.js';
@@ -565,5 +566,25 @@ export class OpenCodePlugin extends BaseAgentAdapter {
    */
   getExtensionInstaller(): BaseExtensionInstaller | undefined {
     return undefined;
+  }
+
+  describeInstall(): PlannedAction[] {
+    return [
+      {
+        kind: 'install',
+        label: 'Install OpenCode globally with npm',
+        targets: ['opencode-ai', 'global npm bin link for opencode'],
+      },
+    ];
+  }
+
+  describeUninstall(): PlannedAction[] {
+    return [
+      {
+        kind: 'remove',
+        label: 'Uninstall the global OpenCode npm package',
+        targets: ['opencode-ai', 'global npm bin link for opencode'],
+      },
+    ];
   }
 }

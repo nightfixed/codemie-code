@@ -1,4 +1,5 @@
 import type { AgentMetadata, AgentConfig } from '../../core/types.js';
+import type { PlannedAction } from '@/cli/commands/shared/dry-run.js';
 import { BaseAgentAdapter } from '../../core/BaseAgentAdapter.js';
 import type { SessionAdapter } from '../../core/session/BaseSessionAdapter.js';
 import { logger } from '@/utils/logger.js';
@@ -513,5 +514,48 @@ export class PiPlugin extends BaseAgentAdapter {
     _options?: import('../../core/types.js').AgentInstallationOptions,
   ): Promise<void> {
     await installRequiredPiPackages({ cliCommand: this.metadata.cliCommand });
+  }
+
+  describeInstall(): PlannedAction[] {
+    return [
+      {
+        kind: 'install',
+        label: 'Install the Pi coding agent globally with npm',
+        targets: ['@earendil-works/pi-coding-agent', 'global npm bin link for pi'],
+      },
+    ];
+  }
+
+  describeUninstall(): PlannedAction[] {
+    return [
+      {
+        kind: 'remove',
+        label: 'Uninstall the global Pi coding agent npm package',
+        targets: ['@earendil-works/pi-coding-agent', 'global npm bin link for pi'],
+      },
+    ];
+  }
+
+  /**
+   * Describe the `pi install <package>` calls made by additionalInstallation().
+   */
+  describeAdditionalInstallation(): PlannedAction[] {
+    return [
+      {
+        kind: 'install',
+        label: 'Install the Superpowers skills package into Pi',
+        targets: ['git:github.com/obra/superpowers'],
+      },
+      {
+        kind: 'install',
+        label: 'Install the Pi subagents package into Pi',
+        targets: ['npm:pi-subagents'],
+      },
+      {
+        kind: 'install',
+        label: 'Install the Pi MCP adapter package into Pi',
+        targets: ['npm:pi-mcp-adapter'],
+      },
+    ];
   }
 }

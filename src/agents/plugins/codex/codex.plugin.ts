@@ -42,6 +42,7 @@
  */
 
 import type { AgentMetadata, AgentConfig } from '../../core/types.js';
+import type { PlannedAction } from '@/cli/commands/shared/dry-run.js';
 import { BaseAgentAdapter } from '../../core/BaseAgentAdapter.js';
 import type { SessionAdapter } from '../../core/session/BaseSessionAdapter.js';
 import type { BaseExtensionInstaller } from '../../core/extension/BaseExtensionInstaller.js';
@@ -559,5 +560,25 @@ export class CodexPlugin extends BaseAgentAdapter {
    */
   getExtensionInstaller(): BaseExtensionInstaller | undefined {
     return undefined;
+  }
+
+  describeInstall(): PlannedAction[] {
+    return [
+      {
+        kind: 'install',
+        label: 'Install OpenAI Codex CLI globally with npm',
+        targets: ['@openai/codex', 'global npm bin link for codex'],
+      },
+    ];
+  }
+
+  describeUninstall(): PlannedAction[] {
+    return [
+      {
+        kind: 'remove',
+        label: 'Uninstall the global OpenAI Codex CLI npm package',
+        targets: ['@openai/codex', 'global npm bin link for codex'],
+      },
+    ];
   }
 }

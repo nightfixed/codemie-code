@@ -4,6 +4,7 @@ import type {
   ResumeOwnershipResult,
 } from '../../core/types.js';
 import { BaseAgentAdapter } from '../../core/BaseAgentAdapter.js';
+import type { PlannedAction } from '@/cli/commands/shared/dry-run.js';
 import { ClaudeSessionAdapter } from './claude.session.js';
 import { resolveClaudeModel, listRouterModelIds, buildModelLabelMap, buildModelPickerOptions, type ClaudeModelTier } from './claude.models.js';
 import { writeConfigToTempFile } from '../../core/temp-config.js';
@@ -881,6 +882,68 @@ export class ClaudePlugin extends BaseAgentAdapter {
     }
 
     return result.installedVersion ?? null;
+  }
+
+  /**
+   * Describe what install()/installVersion() would do, without side effects.
+   */
+  describeInstall(): PlannedAction[] {
+    const isWindows = process.platform === 'win32';
+    const installerUrl = isWindows
+      ? CLAUDE_INSTALLER_URLS.windows
+      : CLAUDE_INSTALLER_URLS.macOS;
+
+    return [
+      {
+        kind: 'exec',
+        label: 'Download and run the Claude Code native installer',
+        targets: [installerUrl],
+      },
+      {
+        kind: 'install',
+        label: 'Install the claude binary placed by the native installer',
+        targets: [isWindows ? 'claude command added to the Windows PATH' : '~/.local/bin/claude'],
+      },
+    ];
+  }
+
+  /**
+   * Describe what uninstall() would do, without side effects.
+   * The inherited base uninstall removes the npm package; the native binary is
+   * not touched by it.
+   */
+  describeUninstall(): PlannedAction[] {
+    return [
+      {
+        kind: 'remove',
+        label: 'Uninstall the global @anthropic-ai/claude-code npm package',
+        targets: [
+          '@anthropic-ai/claude-code',
+          'global npm bin link for claude',
+          'native binary at ~/.local/bin/claude is left in place',
+        ],
+      },
+    ];
+  }
+
+  /**
+   * Describe what additionalInstallation() would do, without side effects.
+   */
+  describeAdditionalInstallation(): PlannedAction[] {
+    const soundsDir = '~/.codemie/sounds';
+
+    return [
+      {
+        kind: 'write-file',
+        label: 'Create the sound directories used by the Claude Code sound hooks',
+        targets: [
+          `${soundsDir}/SessionStart`,
+          `${soundsDir}/UserPromptSubmit`,
+          `${soundsDir}/PermissionRequest`,
+          `${soundsDir}/Stop`,
+        ],
+      },
+    ];
   }
 
   /**

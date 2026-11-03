@@ -10,6 +10,7 @@
 
 import { platform } from 'os';
 import { exec } from '../../utils/processes.js';
+import type { PlannedAction } from '@/cli/commands/shared/dry-run.js';
 import { logger } from '../../utils/logger.js';
 import { BaseFrameworkAdapter } from '../core/BaseFrameworkAdapter.js';
 import type { FrameworkMetadata, FrameworkInitOptions } from '../core/types.js';
@@ -106,6 +107,36 @@ export class SpeckitPlugin extends BaseFrameworkAdapter {
       this.logUninstallError(error);
       throw error;
     }
+  }
+
+  /**
+   * Describe what install() would do, without side effects.
+   */
+  describeInstall(): PlannedAction[] {
+    return [
+      {
+        kind: 'install',
+        label: 'Install the SpecKit CLI from GitHub with uv tool install',
+        targets: [
+          'specify-cli',
+          'git+https://github.com/github/spec-kit.git',
+          'specify (uv tool bin link)',
+        ],
+      },
+    ];
+  }
+
+  /**
+   * Describe what uninstall() would do, without side effects.
+   */
+  describeUninstall(): PlannedAction[] {
+    return [
+      {
+        kind: 'remove',
+        label: 'Uninstall the SpecKit CLI with uv tool uninstall',
+        targets: ['specify-cli', 'specify (uv tool bin link)'],
+      },
+    ];
   }
 
   /**

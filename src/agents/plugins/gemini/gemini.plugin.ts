@@ -1,4 +1,5 @@
 import type { AgentMetadata, HookTransformer } from '../../core/types.js';
+import type { PlannedAction } from '@/cli/commands/shared/dry-run.js';
 import { BaseAgentAdapter } from '../../core/BaseAgentAdapter.js';
 import { GeminiHookTransformer } from './gemini.hook-transformer.js';
 import { GeminiSessionAdapter } from './gemini.session-adapter.js';
@@ -250,4 +251,23 @@ export class GeminiPlugin extends BaseAgentAdapter {
     }
   }
 
+  describeInstall(): PlannedAction[] {
+    return [
+      {
+        kind: 'install',
+        label: 'Install Gemini CLI globally with npm',
+        targets: ['@google/gemini-cli', 'global npm bin link for gemini'],
+      },
+    ];
+  }
+
+  describeUninstall(): PlannedAction[] {
+    return [
+      {
+        kind: 'remove',
+        label: 'Uninstall the global Gemini CLI npm package',
+        targets: ['@google/gemini-cli', 'global npm bin link for gemini'],
+      },
+    ];
+  }
 }
