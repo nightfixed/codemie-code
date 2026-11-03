@@ -12,6 +12,7 @@ import type {
   ProviderCredentials
 } from '../../core/types.js';
 import type { CodeMieConfigOptions } from '../../../env/types.js';
+import type { PlannedAction } from '@/cli/commands/shared/dry-run.js';
 import { ProviderRegistry } from '../../core/registry.js';
 import { OllamaTemplate } from './ollama.template.js';
 import { toCloudOffloadTag } from './ollama.models.js';
@@ -170,6 +171,38 @@ export const OllamaSetupSteps: ProviderSetupSteps = {
       baseUrl,
       apiKey
     };
+  },
+
+  /**
+   * Describe the Ollama setup's credential/sign-in effects without performing
+   * any of them (no health probe, no key validation, no config write).
+   */
+  describeCredentialSideEffects(): PlannedAction[] {
+    return [
+      {
+        kind: 'network',
+        label: 'Probe the Ollama daemon health endpoint at the configured base URL',
+        targets: [OllamaTemplate.defaultBaseUrl]
+      },
+      {
+        kind: 'network',
+        label:
+          'Validate the optional ollama.com cloud API key against https://ollama.com before saving it',
+        targets: ['https://ollama.com']
+      },
+      {
+        kind: 'store-credential',
+        label:
+          'Store the optional Ollama cloud API key in the profile config (empty for local-only setups)',
+        targets: ['~/.codemie/codemie-cli.config.json', 'apiKey']
+      },
+      {
+        kind: 'write-file',
+        label:
+          'Write the Ollama base URL and selected model into the profile config',
+        targets: ['~/.codemie/codemie-cli.config.json']
+      }
+    ];
   },
 
   /**

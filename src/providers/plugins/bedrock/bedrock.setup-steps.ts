@@ -10,6 +10,7 @@ import type {
   ProviderCredentials
 } from '../../core/types.js';
 import type { CodeMieConfigOptions } from '../../../env/types.js';
+import type { PlannedAction } from '@/cli/commands/shared/dry-run.js';
 import { ProviderRegistry } from '../../core/registry.js';
 import { exec } from 'child_process';
 import { promisify } from 'util';
@@ -291,6 +292,33 @@ export const BedrockSetupSteps: ProviderSetupSteps = {
         awsSecretAccessKey: secretAccessKey
       }
     };
+  },
+
+  /**
+   * Describe the Bedrock setup's credential effects without performing any of
+   * them (no `aws configure` exec, no ~/.aws write, no config write).
+   */
+  describeCredentialSideEffects(): PlannedAction[] {
+    return [
+      {
+        kind: 'exec',
+        label:
+          'Probe the AWS CLI (aws --version, aws configure list-profiles, aws configure get) to discover existing profiles',
+        targets: ['aws']
+      },
+      {
+        kind: 'exec',
+        label:
+          'Run createAwsProfile, which calls `aws configure set` three times to write the access key, secret key and region for a new profile',
+        targets: ['createAwsProfile', '~/.aws/credentials', '~/.aws/config']
+      },
+      {
+        kind: 'store-credential',
+        label:
+          'Store the AWS profile, region and (for direct-key auth) the access key and secret key in the profile config',
+        targets: ['~/.codemie/codemie-cli.config.json', 'awsProfile', 'awsSecretAccessKey']
+      }
+    ];
   },
 
   /**

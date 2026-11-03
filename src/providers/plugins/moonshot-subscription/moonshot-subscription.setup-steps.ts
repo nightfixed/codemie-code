@@ -6,6 +6,7 @@
 
 import inquirer from 'inquirer';
 import type { ProviderCredentials, ProviderSetupSteps } from '../../core/types.js';
+import type { PlannedAction } from '@/cli/commands/shared/dry-run.js';
 import { ProviderRegistry } from '../../core/registry.js';
 import type { CodeMieConfigOptions } from '../../../env/types.js';
 import { logger } from '../../../utils/logger.js';
@@ -78,6 +79,39 @@ export const MoonshotSubscriptionSetupSteps: ProviderSetupSteps = {
         userEmail
       }
     };
+  },
+
+  /**
+   * Describe the subscription setup's credential/sign-in effects without
+   * performing any of them (no PATH probe, no browser sign-in, no config
+   * write). Kimi Code keeps its own native auth; CodeMie stores no key.
+   */
+  describeCredentialSideEffects(): PlannedAction[] {
+    return [
+      {
+        kind: 'exec',
+        label: 'Check that the Kimi Code CLI (`kimi`) is available on PATH',
+        targets: ['kimi']
+      },
+      {
+        kind: 'store-credential',
+        label:
+          'Keep the Moonshot credential in Kimi Code native auth; CodeMie stores no Moonshot API key for this profile',
+        targets: ['Kimi Code native auth']
+      },
+      {
+        kind: 'network',
+        label:
+          'Optionally run authenticateWithCodeMie browser sign-in to the CodeMie platform when analytics sync is enabled',
+        targets: ['authenticateWithCodeMie', DEFAULT_CODEMIE_BASE_URL]
+      },
+      {
+        kind: 'write-file',
+        label:
+          'Write the provider and CodeMie analytics project into the profile config',
+        targets: ['~/.codemie/codemie-cli.config.json']
+      }
+    ];
   },
 
   async fetchModels(_credentials: ProviderCredentials): Promise<string[]> {

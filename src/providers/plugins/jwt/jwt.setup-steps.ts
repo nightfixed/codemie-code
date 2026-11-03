@@ -15,6 +15,7 @@ import type {
 import { ProviderName, AuthMethod } from '@/providers/core/types.js';
 import { JWT_TOKEN_DEFAULT_ENV_VAR, resolveJwtToken, resolveJwtTokenEnvVar } from '@/providers/plugins/jwt/jwt.utils.js';
 import type { CodeMieConfigOptions } from '@/env/types.js';
+import type { PlannedAction } from '@/cli/commands/shared/dry-run.js';
 import { ensureApiBase } from '../../core/codemie-auth-helpers.js';
 
 export const JWTBearerSetupSteps: ProviderSetupSteps = {
@@ -108,6 +109,28 @@ export const JWTBearerSetupSteps: ProviderSetupSteps = {
         }
       }
     };
+  },
+
+  /**
+   * Describe the JWT setup's credential effects without performing any of
+   * them. Setup never persists the token itself: it records which environment
+   * variable holds it, and the token is resolved at runtime.
+   */
+  describeCredentialSideEffects(): PlannedAction[] {
+    return [
+      {
+        kind: 'store-credential',
+        label:
+          `Record the JWT bearer token source (environment variable ${JWT_TOKEN_DEFAULT_ENV_VAR}); the token itself is never written to disk`,
+        targets: [JWT_TOKEN_DEFAULT_ENV_VAR]
+      },
+      {
+        kind: 'write-file',
+        label:
+          'Write the CodeMie base URL and JWT token environment-variable configuration into the profile config',
+        targets: ['~/.codemie/codemie-cli.config.json', 'jwtConfig.tokenEnvVar']
+      }
+    ];
   },
 
   async fetchModels(_credentials: ProviderCredentials): Promise<string[]> {

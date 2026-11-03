@@ -6,6 +6,7 @@
 
 import inquirer from 'inquirer';
 import type { ProviderCredentials, ProviderSetupSteps } from '../../core/types.js';
+import type { PlannedAction } from '@/cli/commands/shared/dry-run.js';
 import { ProviderRegistry } from '../../core/registry.js';
 import type { CodeMieConfigOptions } from '../../../env/types.js';
 import { logger } from '../../../utils/logger.js';
@@ -91,6 +92,39 @@ export const AnthropicSubscriptionSetupSteps: ProviderSetupSteps = {
         userEmail
       }
     };
+  },
+
+  /**
+   * Describe the subscription setup's sign-in effects without performing any
+   * of them (no `claude auth login`, no browser sign-in, no config write).
+   */
+  describeCredentialSideEffects(): PlannedAction[] {
+    return [
+      {
+        kind: 'exec',
+        label:
+          'Run runClaudeBrowserLogin (`claude auth login`) for native Claude Code browser sign-in when Claude is not already authenticated',
+        targets: ['runClaudeBrowserLogin', 'claude auth login']
+      },
+      {
+        kind: 'store-credential',
+        label:
+          'Keep the Anthropic credential in Claude Code native auth; CodeMie stores no Anthropic API key for this profile',
+        targets: ['Claude Code native auth']
+      },
+      {
+        kind: 'network',
+        label:
+          'Optionally run authenticateWithCodeMie browser sign-in to the CodeMie platform when analytics sync is enabled',
+        targets: ['authenticateWithCodeMie', DEFAULT_CODEMIE_BASE_URL]
+      },
+      {
+        kind: 'write-file',
+        label:
+          'Write the provider and CodeMie analytics project into the profile config',
+        targets: ['~/.codemie/codemie-cli.config.json']
+      }
+    ];
   },
 
   async fetchModels(_credentials: ProviderCredentials): Promise<string[]> {

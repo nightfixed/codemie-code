@@ -19,6 +19,7 @@ import type {
   AuthStatus
 } from '../../core/types.js';
 import type { CodeMieConfigOptions, CodeMieIntegrationInfo } from '../../../env/types.js';
+import type { PlannedAction } from '@/cli/commands/shared/dry-run.js';
 import { ProviderRegistry } from '../../core/registry.js';
 import { CodeMieSSO } from './sso.auth.js';
 import { SSOModelProxy } from './sso.models.js';
@@ -155,6 +156,39 @@ export const SSOSetupSteps: ProviderSetupSteps = {
         cookies: authResult.cookies
       }
     };
+  },
+
+  /**
+   * Describe the SSO setup's credential/sign-in effects without performing any
+   * of them (no browser sign-in, no credential-store write, no HTTP request).
+   */
+  describeCredentialSideEffects(): PlannedAction[] {
+    return [
+      {
+        kind: 'network',
+        label:
+          'Start the authenticateWithCodeMie browser sign-in against the CodeMie platform',
+        targets: ['authenticateWithCodeMie', DEFAULT_CODEMIE_BASE_URL]
+      },
+      {
+        kind: 'network',
+        label:
+          'Fetch the user\'s CodeMie projects and LiteLLM integrations with the new session',
+        targets: ['selectCodeMieProject', 'fetchCodeMieIntegrations']
+      },
+      {
+        kind: 'store-credential',
+        label:
+          'Store the SSO session cookies in the CodeMie credential store',
+        targets: ['CredentialStore.storeSSOCredentials', 'sso-session-cookies']
+      },
+      {
+        kind: 'write-file',
+        label:
+          'Write the CodeMie URL, project, user email and integration into the profile config',
+        targets: ['~/.codemie/codemie-cli.config.json']
+      }
+    ];
   },
 
   /**

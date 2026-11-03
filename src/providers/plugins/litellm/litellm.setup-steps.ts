@@ -5,6 +5,7 @@
  */
 
 import type { ProviderSetupSteps, ProviderCredentials } from '../../core/types.js';
+import type { PlannedAction } from '@/cli/commands/shared/dry-run.js';
 import { LiteLLMTemplate } from './litellm.template.js';
 import inquirer from 'inquirer';
 
@@ -32,6 +33,27 @@ export const LiteLLMSetupSteps: ProviderSetupSteps = {
       baseUrl: answers.baseUrl.trim(),
       apiKey: answers.apiKey?.trim() || 'not-required'
     };
+  },
+
+  /**
+   * Describe the LiteLLM setup's credential effects without performing any of
+   * them (no proxy request, no config write).
+   */
+  describeCredentialSideEffects(): PlannedAction[] {
+    return [
+      {
+        kind: 'store-credential',
+        label:
+          'Store the LiteLLM proxy API key in the profile config (the "not-required" placeholder when no key is supplied)',
+        targets: ['apiKey']
+      },
+      {
+        kind: 'write-file',
+        label:
+          'Write the LiteLLM proxy base URL and selected model into the profile config',
+        targets: ['~/.codemie/codemie-cli.config.json', LiteLLMTemplate.defaultBaseUrl]
+      }
+    ];
   },
 
   async fetchModels(credentials: ProviderCredentials): Promise<string[]> {

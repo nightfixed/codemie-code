@@ -6,6 +6,7 @@
 
 import type { CodeMieConfigOptions } from '../../env/types.js';
 import type { ProviderLifecycleHooks } from '../../agents/core/types.js';
+import type { PlannedAction } from '@/cli/commands/shared/dry-run.js';
 
 /**
  * Provider capabilities
@@ -298,6 +299,17 @@ export interface ProviderSetupSteps {
    * Interactive prompts for API keys, URLs, etc.
    */
   getCredentials(isUpdate?: boolean): Promise<ProviderCredentials>;
+
+  /**
+   * Describe the credential/sign-in side effects that setup would perform,
+   * without performing any of them.
+   *
+   * Returns the would-be actions (credential storage, browser/server sign-in,
+   * config writes, spawned commands) for a dry-run preview. Implementations
+   * must be side-effect free: no sign-in, no credential-store write, no
+   * network call, no file write and no spawned process.
+   */
+  describeCredentialSideEffects(): PlannedAction[];
 
   /**
    * Step 2: Fetch available models
