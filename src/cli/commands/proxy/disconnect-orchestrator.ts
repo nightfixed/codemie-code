@@ -9,10 +9,11 @@ import chalk from 'chalk';
 import { logger } from '@/utils/logger.js';
 import { sanitizeLogArgs } from '@/utils/security.js';
 
-import { removeCodexDesktopConfig } from './connectors/codex-desktop.js';
-import { removeClaudeCodeOtlpConfig } from './connectors/claude-code-otlp.js';
-import { removeCopilotChatOtlpConfig } from './connectors/copilot-chat-otlp.js';
-import { removeCopilotCliOtlpConfig } from './connectors/copilot-cli-otlp.js';
+import { removeCodexDesktopConfig, describeRemove as describeRemoveCodexDesktop } from './connectors/codex-desktop.js';
+import { removeClaudeCodeOtlpConfig, describeRemove as describeRemoveClaudeCodeOtlp } from './connectors/claude-code-otlp.js';
+import { removeCopilotChatOtlpConfig, describeRemove as describeRemoveCopilotChatOtlp } from './connectors/copilot-chat-otlp.js';
+import { removeCopilotCliOtlpConfig, describeRemove as describeRemoveCopilotCliOtlp } from './connectors/copilot-cli-otlp.js';
+import { printEndCap, printPlannedActions, type PlannedAction } from '../shared/dry-run.js';
 import { CLAUDE_CODE_OTLP_AGENT_NAME } from '@/agents/plugins/claude-code-otlp/claude-code-otlp.constants.js';
 import { COPILOT_CHAT_OTLP_AGENT_NAME } from '@/agents/plugins/copilot-chat-otlp/copilot-chat-otlp.constants.js';
 import { COPILOT_CLI_OTLP_AGENT_NAME } from '@/agents/plugins/copilot-cli-otlp/copilot-cli-otlp.constants.js';
@@ -172,4 +173,47 @@ export async function disconnectTargets(opts: DisconnectOptions): Promise<void> 
   if (targets.copilotCliOtlp) {
     await disconnectCopilotCliOtlp(opts.scope);
   }
+}
+
+/**
+ * Builds and prints the `proxy disconnect --dry-run` plan.
+ *
+ * Describe-only: it composes the connectors' `describeRemove()` seams and never
+ * calls a `remove*Config` function. The daemon is deliberately out of scope here,
+ * exactly as in {@link disconnectTargets}, so the plan says so explicitly.
+ */
+export async function describeDisconnect(opts: DisconnectOptions): Promise<void> {
+  const { targets } = opts;
+  if (!targets.codexDesktop && !targets.claudeCodeOtlp && !targets.copilotChatOtlp && !targets.copilotCliOtlp) {
+    console.log(DISCONNECT_TARGET_LIST);
+    return;
+  }
+
+  const plan: PlannedAction[] = [];
+
+  if (targets.codexDesktop) {
+    plan.push(...describeRemoveCodexDesktop());
+  }
+
+  if (targets.claudeCodeOtlp) {
+    plan.push(...describeRemoveClaudeCodeOtlp());
+  }
+
+  if (targets.copilotChatOtlp) {
+    plan.push(...describeRemoveCopilotChatOtlp());
+  }
+
+  if (targets.copilotCliOtlp) {
+    plan.push(...describeRemoveCopilotCliOtlp());
+  }
+
+  plan.push({
+    kind: 'exec',
+    label: 'Leave the local proxy daemon running — stopping it stays `codemie proxy stop`\'s job',
+    targets: ['no daemon stop or restart'],
+  });
+
+  printPlannedActions(plan);
+  printEndCap();
+  process.exitCode = 0;
 }

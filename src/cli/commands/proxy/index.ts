@@ -5,7 +5,7 @@ import { ConfigurationError } from '../../../utils/errors.js';
 import { checkStatus, readState, stopDaemon, writeState } from './daemon-manager.js';
 import { launchDaemon } from './launch-daemon.js';
 import { restartProxy } from './restart.js';
-import { disconnectTargets } from './disconnect-orchestrator.js';
+import { disconnectTargets, describeDisconnect, type DisconnectOptions } from './disconnect-orchestrator.js';
 import { createProxyAnalyticsCommand } from './analytics-command.js';
 import { checkProxyHealth } from './health-check.js';
 import { printDesktopInspection } from './inspect-desktop.js';
@@ -14,6 +14,8 @@ import {
   daemonMatchesRequest,
   printProxyError,
   connectTargets,
+  describeConnect,
+  type ConnectOptions,
   type RequestedDaemonConfig,
 } from './connect-orchestrator.js';
 import { CLAUDE_CODE_OTLP_AGENT_NAME } from '@/agents/plugins/claude-code-otlp/claude-code-otlp.constants.js';
@@ -34,6 +36,7 @@ interface UnifiedConnectOptions {
   copilotCliOtlp?: boolean;
   claudeDesktop?: boolean;
   codexDesktop?: boolean;
+  dryRun?: boolean;
   force?: boolean;
   insiders?: boolean;
   model?: string;
@@ -43,6 +46,15 @@ interface UnifiedConnectOptions {
   verbose?: boolean;
   vscode?: boolean;
   vscodeClaudeCode?: boolean;
+}
+
+interface UnifiedDisconnectOptions {
+  claudeCodeOtlp?: boolean;
+  copilotChatOtlp?: boolean;
+  copilotCliOtlp?: boolean;
+  codexDesktop?: boolean;
+  dryRun?: boolean;
+  scope?: 'user' | 'project';
 }
 
 interface AliasConnectOptions {
@@ -318,7 +330,7 @@ export function createProxyCommand(): Command {
       `Skip the confirmation prompt (required when non-interactive; applies to --${CLAUDE_CODE_OTLP_AGENT_NAME})`,
     )
     .action(async (opts: UnifiedConnectOptions) => {
-      await connectTargets({
+      const connectOptions: ConnectOptions = {
         targets: {
           claudeCodeOtlp: Boolean(opts.claudeCodeOtlp),
           copilotChatOtlp: Boolean(opts.copilotChatOtlp),
@@ -335,7 +347,14 @@ export function createProxyCommand(): Command {
         model: opts.model,
         scope: opts.scope,
         silent: Boolean(opts.silent),
-      });
+      };
+
+      if (opts.dryRun) {
+        await describeConnect(connectOptions);
+        return;
+      }
+
+      await connectTargets(connectOptions);
     });
 
   proxy
@@ -353,14 +372,8 @@ export function createProxyCommand(): Command {
       .default('user')
       .choices(['user', 'project']),
     )
-    .action(async (opts: {
-      claudeCodeOtlp?: boolean;
-      copilotChatOtlp?: boolean;
-      copilotCliOtlp?: boolean;
-      codexDesktop?: boolean;
-      scope?: 'user' | 'project';
-    }) => {
-      await disconnectTargets({
+    .action(async (opts: UnifiedDisconnectOptions) => {
+      const disconnectOptions: DisconnectOptions = {
         targets: {
           claudeCodeOtlp: Boolean(opts.claudeCodeOtlp),
           copilotChatOtlp: Boolean(opts.copilotChatOtlp),
@@ -368,7 +381,14 @@ export function createProxyCommand(): Command {
           codexDesktop: Boolean(opts.codexDesktop),
         },
         scope: opts.scope,
-      });
+      };
+
+      if (opts.dryRun) {
+        await describeDisconnect(disconnectOptions);
+        return;
+      }
+
+      await disconnectTargets(disconnectOptions);
     });
 
   // Deprecated aliases — kept working, mapped onto the unified target flags.

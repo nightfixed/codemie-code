@@ -6,8 +6,11 @@
  * Config writers (`connectors/desktop.ts`, `connectors/vscode.ts`,
  * `connectors/vscode-claude-code.ts`) are composed unchanged.
  */
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import chalk from 'chalk';
 import { ConfigLoader } from '../../../utils/config.js';
+import { getCodemiePath } from '../../../utils/paths.js';
 import { ProviderRegistry } from '../../../providers/index.js';
 import { displaySetupInstructions } from '../../../providers/integration/setup-ui.js';
 import {
@@ -20,6 +23,11 @@ import { sanitizeLogArgs } from '../../../utils/security.js';
 import { syncRegisteredSkills } from '../skills/setup/sync.js';
 import { syncPluginSkills } from '../skills/setup/sync-plugin.js';
 import {
+  printEndCap,
+  printPlannedActions,
+  type PlannedAction,
+} from '../shared/dry-run.js';
+import {
   checkStatus,
   readState,
   spawnDaemon,
@@ -31,11 +39,18 @@ import {
   getDesktopBaseDir,
   mapCanonicalToDesktop,
   describeManagedSettingsOverride,
+  describe as describeDesktopConnector,
   summarizeManagedOauthShapes,
 } from './connectors/desktop.js';
 import { fetchManagedMcpServers } from './connectors/managed-mcp-remote.js';
-import { writeVsCodeClaudeCodeConfig } from './connectors/vscode-claude-code.js';
-import { writeVsCodeLanguageModelsConfig } from './connectors/vscode.js';
+import {
+  writeVsCodeClaudeCodeConfig,
+  describe as describeVsCodeClaudeCodeConnector,
+} from './connectors/vscode-claude-code.js';
+import {
+  writeVsCodeLanguageModelsConfig,
+  describe as describeVsCodeConnector,
+} from './connectors/vscode.js';
 import { checkProxyHealth } from './health-check.js';
 import {
   discoverCodexModels,
@@ -45,14 +60,22 @@ import {
   getCodexDesktopStatePath,
   selectCodexModel,
   writeCodexDesktopConfig,
+  describe as describeCodexDesktopConnector,
 } from './connectors/codex-desktop.js';
 import {
   confirmClaudeCodeOtlp,
   runClaudeCodeOtlp,
   type ClaudeCodeOtlpDisplay,
 } from './claude-code-otlp-flow.js';
-import { writeCopilotChatOtlpConfig } from './connectors/copilot-chat-otlp.js';
-import { writeCopilotCliOtlpConfig } from './connectors/copilot-cli-otlp.js';
+import {
+  writeCopilotChatOtlpConfig,
+  describe as describeCopilotChatOtlpConnector,
+} from './connectors/copilot-chat-otlp.js';
+import {
+  writeCopilotCliOtlpConfig,
+  describe as describeCopilotCliOtlpConnector,
+} from './connectors/copilot-cli-otlp.js';
+import { describe as describeClaudeCodeOtlpConnector } from './connectors/claude-code-otlp.js';
 import { CLAUDE_CODE_OTLP_AGENT_NAME } from '@/agents/plugins/claude-code-otlp/claude-code-otlp.constants.js';
 import type { AllowlistScope } from '@/agents/plugins/claude-code-otlp/claude-code-otlp.allowlist.js';
 import { isProcessAliveStrict } from '@/utils/processes.js';
@@ -312,7 +335,12 @@ function resolveProfileCodeMieUrl(baseUrl: string, codeMieUrl?: string): string 
   return profileOrigin;
 }
 
-export function printProxyError(error: unknown, label: string): never {
+/**
+ * Renders a failed connect/start/restart for the user and marks the process as
+ * failed — without leaving the process. Shared by the real path (which then
+ * exits) and the dry-run planner (which still owes the caller an end-cap).
+ */
+function reportProxyError(error: unknown, label: string): void {
   const context = createErrorContext(error);
   logger.error(label, error);
 
@@ -322,6 +350,11 @@ export function printProxyError(error: unknown, label: string): never {
     console.error(formatErrorForUser(context, { showSystem: false }));
   }
 
+  process.exitCode = 1;
+}
+
+export function printProxyError(error: unknown, label: string): never {
+  reportProxyError(error, label);
   process.exit(1);
 }
 
@@ -507,7 +540,6 @@ function printSummary(results: TargetResult[]): void {
     }
   }
 }
-
 async function runClaudeDesktop(state: DaemonState, verbose: boolean): Promise<TargetResult> {
   try {
     const canonical = state.syncCodeMieUrl
@@ -944,5 +976,307 @@ export async function connectTargets(opts: ConnectOptions): Promise<void> {
   }
   if (allFailed && startedInThisRun) {
     await rollbackDaemon();
+  }
+}
+
+// ── Dry-run plan (`proxy connect --dry-run`) ─────────────────────────────────
+
+/**
+ * Describes the two fire-and-forget skill syncs (`syncRegisteredSkills` and
+ * `syncPluginSkills`) by the paths their writers target. Nothing is read,
+ * fetched or written.
+ */
+function describeSkillSync(): PlannedAction[] {
+  const claudeSkillsDir = join(homedir(), '.claude', 'skills');
+
+  return [
+    {
+      kind: 'write-file',
+      label: 'Refresh every registered CodeMie skill from the platform',
+      targets: [
+        join(claudeSkillsDir, '<global-skill>', 'SKILL.md'),
+        join(process.cwd(), '.claude', 'skills', '<local-skill>', 'SKILL.md'),
+      ],
+    },
+    {
+      kind: 'write-file',
+      label: 'Install the CodeMie Claude plugin bundle',
+      targets: [join(homedir(), '.codemie', 'claude-plugin')],
+    },
+    {
+      kind: 'write-file',
+      label: 'Copy each bundled plugin skill into the Claude Code skills directory',
+      targets: [join(claudeSkillsDir, '<plugin-skill>', 'SKILL.md')],
+    },
+  ];
+}
+
+/**
+ * Describes the daemon lifecycle `ensureDaemon` would run, plus the gateway key
+ * that start stores. It reads the daemon state file only: no process is spawned
+ * or signalled and the daemon is never contacted for health.
+ */
+async function describeDaemonLifecycle(
+  opts: ConnectOptions,
+  config: Awaited<ReturnType<typeof ConfigLoader.load>>,
+  profile: string
+): Promise<PlannedAction[]> {
+  const identity = deriveDaemonIdentity(opts.targets);
+  const statePath = getCodemiePath('proxy-daemon.json');
+  const requested: RequestedDaemonConfig = {
+    profile,
+    port: DEFAULT_DAEMON_PORT,
+    project: config.codeMieProject,
+    clientType: identity.clientType,
+    provider: config.provider ?? 'ai-run-sso',
+    targetUrl: config.baseUrl,
+    model: normalizeDaemonModel(config.model),
+  };
+
+  const state = await readState();
+  const running = Boolean(state && isProcessAliveStrict(state.pid));
+  const matches = Boolean(state && daemonMatchesRequest(state, requested));
+  const force = Boolean(opts.force);
+  const port = state?.port ?? DEFAULT_DAEMON_PORT;
+
+  const plan: PlannedAction[] = [];
+
+  if (running && (force || !matches)) {
+    plan.push({
+      kind: 'stop-process',
+      label: force
+        ? 'Stop the running proxy so a fresh one can be started'
+        : 'Stop the running proxy because it serves a different profile or client',
+      targets: [`pid ${state?.pid}`, statePath],
+    });
+  }
+
+  if (running && matches && !force) {
+    plan.push({
+      kind: 'network',
+      label:
+        'Check the running proxy with a deep health call; a stop and start would follow only if it reports unhealthy',
+      targets: [
+        `GET http://127.0.0.1:${port}/health`,
+        `GET http://127.0.0.1:${port}/v1/llm_models`,
+      ],
+    });
+  } else {
+    plan.push({
+      kind: 'start-process',
+      label: 'Start the CodeMie proxy daemon for this profile and client',
+      targets: [
+        statePath,
+        `http://127.0.0.1:${DEFAULT_DAEMON_PORT}`,
+        `client ${identity.clientType}`,
+        `profile ${profile}`,
+      ],
+    });
+  }
+
+  plan.push({
+    kind: 'store-credential',
+    label: 'Store the proxy gateway key in the daemon state file when it starts',
+    targets: [statePath, 'gatewayKey'],
+  });
+
+  return plan;
+}
+
+/**
+ * Describes every active target's writes by composing the connector-owned
+ * `describe()` seams. The Codex model pin is the one deliberate exception: its
+ * slug is only computable against the daemon key a dry run never mints, so the
+ * plan names an explicit `--model` and otherwise says the model would be picked.
+ */
+function describeTargetWrites(
+  opts: ConnectOptions,
+  config: Awaited<ReturnType<typeof ConfigLoader.load>>
+): PlannedAction[] {
+  const { targets } = opts;
+  const insiders = Boolean(opts.insiders);
+  const plan: PlannedAction[] = [];
+
+  if (targets.claudeDesktop) {
+    const codeMieUrl = resolveProfileCodeMieUrl(config.baseUrl as string, config.codeMieUrl);
+    plan.push(...describeDesktopConnector());
+    plan.push({
+      kind: 'network',
+      label: 'Fetch the managed MCP server catalog for Claude Desktop from this workspace',
+      targets: [`GET ${codeMieUrl}/v1/mcp/managed-servers?client=claude-desktop`],
+    });
+  }
+
+  if (targets.vscode) {
+    plan.push(...describeVsCodeConnector(insiders));
+  }
+
+  if (targets.vscodeClaudeCode) {
+    plan.push(...describeVsCodeClaudeCodeConnector(insiders));
+  }
+
+  if (targets.codexDesktop) {
+    if (!opts.force) {
+      plan.push({
+        kind: 'exec',
+        label:
+          'Check that the ChatGPT desktop app (which ships Codex) is installed — re-run with --force to write anyway',
+        targets: getCodexDesktopAppCandidates(),
+      });
+    }
+    plan.push(...describeCodexDesktopConnector());
+    if (opts.model) {
+      plan.push({
+        kind: 'write-file',
+        label: `Pin the requested Codex model "${opts.model}"`,
+        targets: [getCodexDesktopConfigPath(), getCodexDesktopStatePath()],
+      });
+    } else {
+      plan.push({
+        kind: 'network',
+        label:
+          'Select the best available model from the proxy catalog — no slug is claimed, because the pick needs the daemon key a dry run never creates',
+        targets: ['GET <proxyUrl>/v1/llm_models?include_all=true'],
+      });
+    }
+  }
+
+  if (targets.claudeCodeOtlp) {
+    plan.push(...describeClaudeCodeOtlpConnector());
+    plan.push({
+      kind: 'write-file',
+      label: 'Apply the requested analytics tracking scope to the Claude Code allowlist',
+      targets: [`scope: ${opts.scope ?? 'user'}`, `project: ${process.cwd()}`],
+    });
+  }
+
+  if (targets.copilotChatOtlp) {
+    plan.push(...describeCopilotChatOtlpConnector());
+  }
+
+  if (targets.copilotCliOtlp) {
+    plan.push(...describeCopilotCliOtlpConnector());
+  }
+
+  return plan;
+}
+
+/**
+ * Builds and prints the `proxy connect --dry-run` plan.
+ *
+ * Describe-only by construction: it loads the profile config and checks whether
+ * SSO credentials are stored, then mirrors every phase `connectTargets` would run
+ * — skill sync, the Claude plugin bundle, the daemon lifecycle, the gateway key
+ * and each active target's writes — as planned actions. No credential exchange,
+ * skill sync, key mint, daemon start/stop and no client config write happens on
+ * this path; a missing profile, URL or credential is reported as the failure the
+ * real command would hit, never as a would-succeed plan.
+ */
+export async function describeConnect(opts: ConnectOptions): Promise<void> {
+  const { targets } = opts;
+
+  if (!hasAnyTarget(targets)) {
+    console.log(TARGET_LIST);
+    return;
+  }
+
+  const insiders = Boolean(opts.insiders);
+
+  if (insiders && !targets.vscode && !targets.vscodeClaudeCode) {
+    console.log(
+      chalk.yellow('Note: --insiders has no effect without a VS Code target (--vscode / --vscode-claude-code).')
+    );
+  }
+
+  if (opts.model && !targets.codexDesktop) {
+    console.log(chalk.yellow('Note: --model has no effect without --codex-desktop.'));
+  }
+
+  if (targets.codexDesktop && deriveDaemonIdentity(targets).clientType !== 'codex-desktop') {
+    console.log(chalk.yellow(
+      'Warning: --codex-desktop was combined with a target that owns the shared daemon, so\n' +
+      '  Codex model-name resolution is disabled for this run. Selecting a model in the Codex\n' +
+      '  app will fail. Run `codemie proxy connect --codex-desktop` on its own instead.'
+    ));
+  }
+
+  const { label, commandExample } = describeTargets(targets);
+
+  try {
+    // Same guard as the real path: without a TTY the confirmation can never be
+    // shown, so --silent is the only non-interactive success path.
+    if (targets.claudeCodeOtlp && !opts.silent && isNonInteractiveEnvironment()) {
+      throw new ConfigurationError(
+        'Claude Code analytics requires confirmation, but no interactive terminal is available.\n' +
+        `Re-run with --silent to apply it without a prompt: codemie proxy connect --${CLAUDE_CODE_OTLP_AGENT_NAME} --silent`
+      );
+    }
+
+    const resolved = await resolveSsoProxyConfig(opts.profile, label, commandExample);
+    const config = resolved.config;
+    if (!config.baseUrl) {
+      throw new ConfigurationError('No API URL configured. Run: codemie setup');
+    }
+    // The Claude Desktop target fetches org-managed MCP servers via codeMieUrl.
+    if (targets.claudeDesktop && !config.codeMieUrl) {
+      throw new ConfigurationError(
+        'Selected profile is missing CodeMie URL.\n' +
+        'Run: codemie setup or codemie profile login'
+      );
+    }
+
+    const profile = config.name ?? 'default';
+    if (!(targets.claudeCodeOtlp && !opts.silent)) {
+      console.log(opts.verbose
+        ? chalk.cyan(
+          `Using profile: ${profile} ` +
+          `(source: ${resolved.profileSource === 'explicit' ? '--profile' : 'active profile'})`
+        )
+        : chalk.cyan(`Using profile: ${profile}`));
+    }
+
+    if (targets.claudeCodeOtlp && !opts.silent) {
+      console.log(chalk.yellow(
+        'Note: enabling Claude Code analytics would ask for confirmation first; this preview assumes it is accepted.'
+      ));
+    }
+
+    // Presence only: `verifySsoCredentials`' network round-trip is deliberately
+    // skipped, so a dry run can never refresh or fail inside a token exchange.
+    const { getStoredPlatformCredentials } = await import(
+      '../../../providers/core/codemie-auth-helpers.js'
+    );
+    const credentials = await getStoredPlatformCredentials({
+      provider: 'ai-run-sso',
+      baseUrl: config.baseUrl,
+      codeMieUrl: config.codeMieUrl,
+    });
+
+    if (!credentials) {
+      console.error(chalk.red(`✗ No SSO credentials found for profile '${profile}'.`));
+      console.error(
+        `  Run: codemie profile login --url ${resolveProfileCodeMieUrl(config.baseUrl, config.codeMieUrl)}`
+      );
+      console.error(
+        chalk.dim('  This dry run would fail the same way; no actions were planned.')
+      );
+      printEndCap();
+      process.exitCode = 1;
+      return;
+    }
+
+    printPlannedActions([
+      ...describeSkillSync(),
+      ...(await describeDaemonLifecycle(opts, config, profile)),
+      ...describeTargetWrites(opts, config),
+    ]);
+    printEndCap();
+    process.exitCode = 0;
+  } catch (error) {
+    // reportProxyError marks the process as failed without exiting, so the dry
+    // run can still finish with its end-cap. The real path (connectTargets)
+    // uses printProxyError, which exits instead.
+    reportProxyError(error, 'Failed to connect proxy');
+    printEndCap();
   }
 }
