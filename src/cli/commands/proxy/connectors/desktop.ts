@@ -2,6 +2,7 @@ import { readFile, writeFile, mkdir, rename } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import type { PlannedAction } from '@/cli/commands/shared/dry-run.js';
 import {
   getClaudeDesktopBaseDir,
   getClaudeDesktopManagedSettingsPath,
@@ -759,6 +760,43 @@ export async function getDesktopConfigPath(baseDir: string = getDesktopBaseDir()
     }
   }
   return join(libDir, `${randomUUID()}.json`);
+}
+
+/**
+ * Describe the writes `writeDesktopConfig` performs without touching the
+ * filesystem or the network. Targets mirror the writer's own paths; the
+ * concrete config-library file name comes from `_meta.json`'s applied id at
+ * write time, so it is shown as a placeholder here.
+ */
+export function describe(): PlannedAction[] {
+  const libDir = join(getDesktopBaseDir(), 'configLibrary');
+  return [
+    {
+      kind: 'network',
+      label: 'Fetch the managed MCP server catalog for Claude Desktop',
+      targets: ['GET <codeMieUrl>/v1/mcp/managed-servers?client=claude-desktop'],
+    },
+    {
+      kind: 'network',
+      label: 'Discover the Claude models the local proxy exposes',
+      targets: ['GET <proxyUrl>/v1/llm_models?include_all=true'],
+    },
+    {
+      kind: 'write-file',
+      label: 'Write the CodeMie gateway inference settings and managed MCP servers',
+      targets: [join(libDir, '<appliedId>.json')],
+    },
+    {
+      kind: 'write-file',
+      label: 'Register the CodeMie Proxy entry in the Claude Desktop config library index',
+      targets: [join(libDir, '_meta.json')],
+    },
+    {
+      kind: 'write-file',
+      label: 'Record the managed MCP server names CodeMie owns',
+      targets: [getManagedMcpStatePath()],
+    },
+  ];
 }
 
 /**

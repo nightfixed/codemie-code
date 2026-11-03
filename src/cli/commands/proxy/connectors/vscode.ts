@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import { mkdir, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
+import type { PlannedAction } from '@/cli/commands/shared/dry-run.js';
 import { ConfigurationError } from '@/utils/errors.js';
 import { fetchTenantModelDescriptors, type TenantModelDescriptor } from './tenant-catalog.js';
 import {
@@ -264,6 +265,28 @@ export async function writeAtomically(configPath: string, content: string): Prom
     }
     throw error;
   }
+}
+
+/**
+ * Describe the VS Code BYOK write without performing it: the model catalog is
+ * fetched over the network and the CodeMie provider is merged into
+ * `chatLanguageModels.json`. The path mirrors
+ * {@link writeVsCodeLanguageModelsConfig} exactly, without its
+ * directory-existence check.
+ */
+export function describe(insiders = false): PlannedAction[] {
+  return [
+    {
+      kind: 'network',
+      label: 'Discover the models the local proxy exposes for VS Code Copilot',
+      targets: ['GET <proxyUrl>/v1/llm_models?include_all=true'],
+    },
+    {
+      kind: 'write-file',
+      label: 'Write the CodeMie language model provider and its models into VS Code',
+      targets: [join(getVsCodeProductDir(insiders), 'User', 'chatLanguageModels.json')],
+    },
+  ];
 }
 
 export async function writeVsCodeLanguageModelsConfig(

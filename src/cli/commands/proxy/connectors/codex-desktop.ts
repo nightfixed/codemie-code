@@ -13,6 +13,7 @@ import { join } from 'node:path';
 import TOML from '@iarna/toml';
 
 import { rankCodexModelIdsByRecency } from '@/agents/plugins/codex/codex-models.js';
+import type { PlannedAction } from '@/cli/commands/shared/dry-run.js';
 import type { LlmModel } from '@/providers/plugins/sso/sso.http-client.js';
 import { ConfigurationError } from '@/utils/errors.js';
 import { exec } from '@/utils/exec.js';
@@ -281,6 +282,40 @@ function parseOrThrow(text: string, configPath: string): Record<string, unknown>
 }
 
 /**
+ * Describe the Codex desktop writes without performing them: model discovery
+ * goes through the local proxy, then the ownership marker, the pre-connect
+ * backup (first unmanaged write only) and the managed `config.toml` block are
+ * written. Paths mirror {@link writeCodexDesktopConfig}'s call sites.
+ */
+export function describe(): PlannedAction[] {
+  const configPath = getCodexDesktopConfigPath();
+  return [
+    {
+      kind: 'network',
+      label: 'Discover the Codex-compatible models the local proxy exposes',
+      targets: ['GET <proxyUrl>/v1/llm_models?include_all=true'],
+    },
+    {
+      kind: 'write-file',
+      label: 'Record the CodeMie Codex desktop state (config path, backup, pinned model)',
+      targets: [getCodexDesktopStatePath()],
+    },
+    {
+      kind: 'write-file',
+      label: 'Back up the existing Codex config before the first CodeMie write',
+      targets: [`${configPath}${BACKUP_SUFFIX}`],
+    },
+    {
+      kind: 'write-file',
+      label:
+        `Splice the CodeMie model_provider and [model_providers.${CODEMIE_PROVIDER_ID}] ` +
+        'block into the Codex config',
+      targets: [configPath],
+    },
+  ];
+}
+
+/**
  * Splice the managed block into the user's Codex config and record ownership.
  *
  * The marker state is written BEFORE the config on purpose. If the config write
@@ -375,6 +410,29 @@ export interface RemoveCodexDesktopResult {
   removed: boolean;
   usedBackup: boolean;
   configPath: string | null;
+}
+
+/**
+ * Describe the Codex desktop removal without performing it: the managed
+ * `model_provider`/`[model_providers.<codemie>]` block is stripped from
+ * `config.toml` (falling back to the pre-connect backup only when the strip
+ * cannot be made clean), then the ownership marker is cleared.
+ */
+export function describeRemove(): PlannedAction[] {
+  return [
+    {
+      kind: 'remove',
+      label:
+        `Remove the CodeMie model_provider and [model_providers.${CODEMIE_PROVIDER_ID}] ` +
+        'block from the Codex config',
+      targets: [getCodexDesktopConfigPath()],
+    },
+    {
+      kind: 'write-file',
+      label: 'Clear the CodeMie Codex desktop ownership state after the block is removed',
+      targets: [getCodexDesktopStatePath()],
+    },
+  ];
 }
 
 /**

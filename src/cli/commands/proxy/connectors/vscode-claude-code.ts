@@ -10,6 +10,7 @@ import {
   type ParseError,
 } from 'jsonc-parser';
 import { ConfigurationError } from '@/utils/errors.js';
+import type { PlannedAction } from '@/cli/commands/shared/dry-run.js';
 import { logger } from '@/utils/logger.js';
 import { sanitizeLogArgs } from '@/utils/security.js';
 import { getVsCodeProductDir, writeAtomically } from './vscode.js';
@@ -228,6 +229,23 @@ export async function writeVsCodeClaudeCodeConfigAtPath(
   );
 
   return { written: true, path: configPath };
+}
+
+/**
+ * Describe the VS Code Claude Code settings write without performing it: the
+ * gateway URL/token and `disableLoginPrompt` are merged into the extension's
+ * `settings.json`. The path mirrors {@link writeVsCodeClaudeCodeConfig} exactly,
+ * without its directory-existence check.
+ */
+export function describe(insiders = false): PlannedAction[] {
+  return [
+    {
+      kind: 'write-file',
+      label:
+        'Write the CodeMie gateway URL/token into the VS Code Claude Code extension settings',
+      targets: [join(getVsCodeProductDir(insiders), 'User', 'settings.json')],
+    },
+  ];
 }
 
 /**

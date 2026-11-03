@@ -21,6 +21,7 @@ import {
   type ParseError,
 } from 'jsonc-parser';
 import { ConfigurationError } from '@/utils/errors.js';
+import type { PlannedAction } from '@/cli/commands/shared/dry-run.js';
 import { logger } from '@/utils/logger.js';
 import { sanitizeLogArgs } from '@/utils/security.js';
 import { getCodemiePath, getDirname } from '@/utils/paths.js';
@@ -29,6 +30,7 @@ import {
   isCopilotProjectTracked,
   readCopilotConnectorScope,
   writeCopilotConnectorScope,
+  getCopilotConnectorsConfigPath,
   type CopilotConnectorScope,
 } from '@/agents/core/copilot-connector-scope.js';
 import { addProjectPath, removeProjectPath } from '@/agents/core/project-allowlist.js';
@@ -171,6 +173,58 @@ async function resolveScope(opts: { scope?: 'user' | 'project' }): Promise<Copil
     : [];
   const paths = await addProjectPath(currentPaths, resolveProjectRoot());
   return { enabled: true, scope: 'project', paths };
+}
+
+/**
+ * Describe the VS Code Copilot Chat hooks wiring without performing it: the
+ * CodeMie-owned hook-definitions file, the `chat.hookFilesLocations` entry in
+ * VS Code's `settings.json`, and the connector scope record are written.
+ */
+export function describe(): PlannedAction[] {
+  return [
+    {
+      kind: 'write-file',
+      label: 'Write the CodeMie hook-definitions file for VS Code Copilot Chat',
+      targets: [getCopilotChatHookFilePath()],
+    },
+    {
+      kind: 'write-file',
+      label: 'Register the CodeMie hook file in VS Code Copilot Chat settings',
+      targets: [getVsCodeChatSettingsPath()],
+    },
+    {
+      kind: 'write-file',
+      label: 'Record the Copilot Chat connector scope (all projects or tracked project roots)',
+      targets: [getCopilotConnectorsConfigPath()],
+    },
+  ];
+}
+
+/**
+ * Describe the VS Code Copilot Chat removal without performing it: the
+ * `chat.hookFilesLocations` entry is removed from VS Code's `settings.json`, the
+ * CodeMie hook file is deleted, and the connector scope record is disabled
+ * (or narrowed to the remaining tracked projects for `--scope project`).
+ */
+export function describeRemove(): PlannedAction[] {
+  return [
+    {
+      kind: 'write-file',
+      label: 'Remove the CodeMie hook file entry from VS Code Copilot Chat settings',
+      targets: [getVsCodeChatSettingsPath()],
+    },
+    {
+      kind: 'remove',
+      label: 'Delete the CodeMie hook-definitions file for VS Code Copilot Chat',
+      targets: [getCopilotChatHookFilePath()],
+    },
+    {
+      kind: 'write-file',
+      label:
+        'Disable the Copilot Chat connector scope, or drop this project from the tracked roots with --scope project',
+      targets: [getCopilotConnectorsConfigPath()],
+    },
+  ];
 }
 
 export async function writeCopilotChatOtlpConfig(

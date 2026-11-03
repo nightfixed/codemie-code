@@ -8,6 +8,7 @@
 import { existsSync } from 'node:fs';
 import type { HookEvent } from '@anthropic-ai/claude-agent-sdk';
 import { copyFile, readFile, unlink } from 'node:fs/promises';
+import type { PlannedAction } from '@/cli/commands/shared/dry-run.js';
 import { ConfigurationError } from '@/utils/errors.js';
 import { logger } from '@/utils/logger.js';
 import { sanitizeLogArgs } from '@/utils/security.js';
@@ -463,6 +464,59 @@ async function readBackupSettings(backupPath: string): Promise<ClaudeSettings | 
     // Corrupt/unreadable backup — nothing to restore, but the caller must still proceed.
   }
   return null;
+}
+
+/**
+ * Describe the Claude Code OTLP settings write without performing it: the hook
+ * surface for every CodeMie-managed event and the OTel environment variables are
+ * merged into `~/.claude/settings.json`, after snapshotting the pre-connect file.
+ */
+export function describe(): PlannedAction[] {
+  const settingsPath = getClaudeSettingsPath();
+  return [
+    {
+      kind: 'write-file',
+      label:
+        'Snapshot the pre-connect Claude Code settings so disconnect can restore displaced values',
+      targets: [`${settingsPath}${SETTINGS_BACKUP_SUFFIX}`],
+    },
+    {
+      kind: 'write-file',
+      label:
+        'Merge the CodeMie hook events and OTel environment variables into the Claude Code settings',
+      targets: [settingsPath],
+    },
+  ];
+}
+
+/**
+ * Describe the Claude Code OTLP removal without performing it: the CodeMie hook
+ * entries and OTel environment keys are stripped from `~/.claude/settings.json`
+ * (the file is deleted when nothing else remains), the per-project allowlist
+ * entry is dropped when disconnecting with `--scope project`, and the stale
+ * pre-connect backup is deleted.
+ */
+export function describeRemove(): PlannedAction[] {
+  const settingsPath = getClaudeSettingsPath();
+  return [
+    {
+      kind: 'remove',
+      label:
+        'Remove the CodeMie hook entries and OTel environment variables from the Claude Code settings',
+      targets: [settingsPath],
+    },
+    {
+      kind: 'write-file',
+      label:
+        'Drop this project from the analytics allowlist when disconnecting with --scope project',
+      targets: [settingsPath],
+    },
+    {
+      kind: 'remove',
+      label: 'Delete the stale pre-connect Claude Code settings backup',
+      targets: [`${settingsPath}${SETTINGS_BACKUP_SUFFIX}`],
+    },
+  ];
 }
 
 export async function writeClaudeCodeOtlpConfig(
