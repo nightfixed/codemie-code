@@ -3,6 +3,7 @@ import chalk from 'chalk';
 import inquirer from 'inquirer';
 import { ConfigLoader } from '../../../utils/config.js';
 import { logger } from '../../../utils/logger.js';
+import { getCodemiePath } from '../../../utils/paths.js';
 import { ProfileDisplay } from './display.js';
 import { ProviderRegistry } from '../../../providers/core/registry.js';
 import { handleAuthValidationFailure } from '../../../providers/core/auth-validation.js';
@@ -10,6 +11,7 @@ import { createLoginCommand, createLogoutCommand, createRefreshCommand } from '.
 import { buildSingleChoiceRow, buildTopLine } from '../shared/selection/ui.js';
 import { ANSI, KEY } from '../shared/selection/constants.js';
 import { COLOR } from '../shared/constants.js';
+import { printEndCap, printPlannedActions, type PlannedAction } from '../shared/dry-run.js';
 import type { ProfileInfo } from './display.js';
 
 export interface ProfileSelectionChoiceNameOptions {
@@ -68,8 +70,28 @@ async function listProfiles(): Promise<void> {
     });
   } catch (error: unknown) {
     logger.error('Failed to list profiles:', error);
-    process.exit(1);
+    process.exitCode = 1;
   }
+}
+
+/**
+ * Resolves the config file a profile mutation would write: the workspace-local
+ * config when it exists, the global config otherwise.
+ */
+function resolveProfileConfigPath(hasLocal: boolean, workingDir: string): string {
+  return hasLocal
+    ? `${workingDir}/.codemie/codemie-cli.config.json`
+    : getCodemiePath('codemie-cli.config.json');
+}
+
+/**
+ * Prints a profile dry-run plan and stops before any mutation. Callers return
+ * immediately after this — nothing described here is ever applied.
+ */
+function printProfilePlan(actions: PlannedAction[]): void {
+  printPlannedActions(actions);
+  printEndCap();
+  process.exitCode = 0;
 }
 
 /**
@@ -82,16 +104,16 @@ function createStatusCommand(): Command {
   command
     .description('Show active profile and authentication status')
     .option('--show-sources', 'Show configuration with source attribution')
-    .action(async (options: { showSources?: boolean }) => {
+    .action(async (options: { showSources?: boolean; dryRun?: boolean }) => {
       try {
         if (options.showSources) {
           await handleStatusWithSources();
         } else {
-          await handleStatus();
+          await handleStatus(options.dryRun);
         }
       } catch (error: unknown) {
         logger.error('Failed to get profile status:', error);
-        process.exit(1);
+        process.exitCode = 1;
       }
     });
 
@@ -102,7 +124,7 @@ function createStatusCommand(): Command {
  * Handle status command
  * Display profile info + auth status, prompt for re-auth if invalid
  */
-async function handleStatus(): Promise<void> {
+async function handleStatus(dryRun = false): Promise<void> {
   const workingDir = process.cwd();
   const config = await ConfigLoader.load(workingDir);
   const profiles = await ConfigLoader.listProfiles(workingDir);
@@ -131,6 +153,19 @@ async function handleStatus(): Promise<void> {
           ? await setupSteps.getAuthStatus(config)
           : undefined;
       } else {
+        // Dry run: the read-only validation above is allowed, but the re-auth it
+        // would trigger is never started — it is only described.
+        if (dryRun) {
+          printProfilePlan([{
+            kind: 'network',
+            label: 'would re-authenticate',
+            targets: [
+              config.codeMieUrl ?? 'active profile'
+            ]
+          }]);
+          return;
+        }
+
         const reauthed = await handleAuthValidationFailure(validationResult, setupSteps, config);
 
         if (reauthed) {
@@ -328,10 +363,22 @@ function createSwitchCommand(): Command {
   command
     .description('Switch active profile')
     .argument('[profile]', 'Profile name to switch to (optional - will prompt if not provided)')
-    .action(async (profileName?: string) => {
+    .action(async (profileName?: string, options: { dryRun?: boolean } = {}) => {
       try {
         const workingDir = process.cwd();
         const hasLocal = await ConfigLoader.hasLocalConfig(workingDir);
+
+        // Dry run: describe the switch and stop before ConfigLoader.switchProfile.
+        if (options.dryRun) {
+          printProfilePlan([{
+            kind: 'write-file',
+            label: profileName
+              ? `would switch active profile to "${profileName}"`
+              : 'would switch the active profile to the profile you select',
+            targets: [resolveProfileConfigPath(hasLocal, workingDir)]
+          }]);
+          return;
+        }
 
         // If no profile name provided, prompt interactively
         if (!profileName) {
@@ -363,7 +410,7 @@ function createSwitchCommand(): Command {
         console.log(chalk.green(`\n✓ Switched to profile "${profileName}" in ${location}\n`));
       } catch (error: unknown) {
         logger.error('Failed to switch profile:', error);
-        process.exit(1);
+        process.exitCode = 1;
       }
     });
 
@@ -377,10 +424,22 @@ function createDeleteCommand(): Command {
     .description('Delete a profile')
     .argument('[profile]', 'Profile name to delete (optional - will prompt if not provided)')
     .option('-y, --yes', 'Skip confirmation')
-    .action(async (profileName?: string, options: { yes?: boolean } = {}) => {
+    .action(async (profileName?: string, options: { yes?: boolean; dryRun?: boolean } = {}) => {
       try {
         const workingDir = process.cwd();
         const hasLocal = await ConfigLoader.hasLocalConfig(workingDir);
+
+        // Dry run: describe the deletion and stop before ConfigLoader.deleteProfile.
+        if (options.dryRun) {
+          printProfilePlan([{
+            kind: 'write-file',
+            label: profileName
+              ? `would delete profile "${profileName}"`
+              : 'would delete the profile you select',
+            targets: [resolveProfileConfigPath(hasLocal, workingDir)]
+          }]);
+          return;
+        }
 
         // If no profile name provided, prompt interactively
         if (!profileName) {
@@ -436,7 +495,7 @@ function createDeleteCommand(): Command {
         }
       } catch (error: unknown) {
         logger.error('Failed to delete profile:', error);
-        process.exit(1);
+        process.exitCode = 1;
       }
     });
 
@@ -450,13 +509,23 @@ function createRenameCommand(): Command {
     .description('Rename a profile')
     .argument('<old-name>', 'Current profile name')
     .argument('<new-name>', 'New profile name')
-    .action(async (oldName: string, newName: string) => {
+    .action(async (oldName: string, newName: string, options: { dryRun?: boolean } = {}) => {
       try {
+        // Dry run: renameProfile only ever writes the global config.
+        if (options.dryRun) {
+          printProfilePlan([{
+            kind: 'write-file',
+            label: `would rename profile "${oldName}" to "${newName}"`,
+            targets: [getCodemiePath('codemie-cli.config.json')]
+          }]);
+          return;
+        }
+
         await ConfigLoader.renameProfile(oldName, newName);
         console.log(chalk.green(`\n✓ Profile renamed from "${oldName}" to "${newName}"\n`));
       } catch (error: unknown) {
         logger.error('Failed to rename profile:', error);
-        process.exit(1);
+        process.exitCode = 1;
       }
     });
 

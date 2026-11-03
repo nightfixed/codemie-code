@@ -9,6 +9,17 @@ import {
   getPlatformUrl,
   getStoredPlatformCredentials
 } from '../../../providers/core/codemie-auth-helpers.js';
+import { printEndCap, printPlannedActions, type PlannedAction } from '../shared/dry-run.js';
+
+/**
+ * Prints an auth dry-run plan and stops before any credential or network
+ * side effect. Callers return immediately after this.
+ */
+function printAuthPlan(actions: PlannedAction[]): void {
+  printPlannedActions(actions);
+  printEndCap();
+  process.exitCode = 0;
+}
 
 // Export individual commands for profile (not nested under 'auth')
 export function createLoginCommand(): Command {
@@ -16,12 +27,17 @@ export function createLoginCommand(): Command {
   command
     .description('Authenticate with AI/Run CodeMie SSO')
     .option('--url <url>', 'AI/Run CodeMie URL to authenticate with')
-    .action(async (options: { url?: string }) => {
+    .action(async (options: { url?: string; dryRun?: boolean }) => {
       try {
+        if (options.dryRun) {
+          await previewLogin(options.url);
+          return;
+        }
+
         await handleLogin(options.url);
       } catch (error: unknown) {
         logger.error('Login failed:', error);
-        process.exit(1);
+        process.exitCode = 1;
       }
     });
 
@@ -33,12 +49,17 @@ export function createLogoutCommand(): Command {
 
   command
     .description('Clear SSO credentials and logout')
-    .action(async () => {
+    .action(async (options: { dryRun?: boolean } = {}) => {
       try {
+        if (options.dryRun) {
+          await previewLogout();
+          return;
+        }
+
         await handleLogout();
       } catch (error: unknown) {
         logger.error('Logout failed:', error);
-        process.exit(1);
+        process.exitCode = 1;
       }
     });
 
@@ -50,12 +71,17 @@ export function createRefreshCommand(): Command {
 
   command
     .description('Refresh SSO credentials')
-    .action(async () => {
+    .action(async (options: { dryRun?: boolean } = {}) => {
       try {
+        if (options.dryRun) {
+          await previewRefresh();
+          return;
+        }
+
         await handleRefresh();
       } catch (error: unknown) {
         logger.error('Refresh failed:', error);
-        process.exit(1);
+        process.exitCode = 1;
       }
     });
 
@@ -146,4 +172,50 @@ async function handleRefresh(): Promise<void> {
   await sso.clearStoredCredentials(url);
 
   await handleLogin(url);
+}
+
+/**
+ * Describes `codemie profile login --dry-run`. Describe-only: it resolves the
+ * target URL from read-only config and never constructs a `CodeMieSSO`, starts
+ * sign-in, or stores a credential.
+ */
+async function previewLogin(url?: string): Promise<void> {
+  const config = await ConfigLoader.load();
+  const codeMieUrl = url || getPlatformUrl(config);
+
+  printAuthPlan([{
+    kind: 'store-credential',
+    label: 'would start sign-in',
+    targets: [codeMieUrl ?? 'no AI/Run CodeMie URL configured or provided']
+  }]);
+}
+
+/**
+ * Describes `codemie profile logout --dry-run`. It resolves the URL from config
+ * only: reading the credential store is avoided because an expired lookup can
+ * delete an entry, and no credential is ever cleared.
+ */
+async function previewLogout(): Promise<void> {
+  const config = await ConfigLoader.load();
+
+  printAuthPlan([{
+    kind: 'remove',
+    label: 'would clear stored SSO credentials',
+    targets: [getPlatformUrl(config) ?? 'default credential slot']
+  }]);
+}
+
+/**
+ * Describes `codemie profile refresh --dry-run`. The real refresh clears the
+ * stored credentials and re-launches sign-in; the preview only says so, without
+ * constructing a `CodeMieSSO`, clearing anything, or authenticating.
+ */
+async function previewRefresh(): Promise<void> {
+  const config = await ConfigLoader.load();
+
+  printAuthPlan([{
+    kind: 'store-credential',
+    label: 'would clear stored credentials and re-authenticate',
+    targets: [getPlatformUrl(config) ?? 'default credential slot']
+  }]);
 }
