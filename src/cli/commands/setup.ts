@@ -4,7 +4,9 @@ import chalk from 'chalk';
 import ora from 'ora';
 import { ConfigLoader } from '../../utils/config.js';
 import { logger } from '../../utils/logger.js';
+import { getCodemiePath } from '../../utils/paths.js';
 import { ProviderRegistry } from '../../providers/index.js';
+import type { ProviderSetupSteps } from '../../providers/index.js';
 import {
   getAllProviderChoices,
   displaySetupSuccess,
@@ -16,6 +18,7 @@ import { AgentRegistry } from '../../agents/registry.js';
 import type { VersionCompatibilityResult } from '../../agents/core/types.js';
 import { createAssistantsSetupCommand } from './assistants/setup/index.js';
 import { createSkillsSetupCommand } from './skills/setup/index.js';
+import { printEndCap, printPlannedActions, type PlannedAction } from './shared/dry-run.js';
 
 export function createSetupCommand(): Command {
   const command = new Command('setup');
@@ -26,7 +29,7 @@ export function createSetupCommand(): Command {
     .option('-v, --verbose', 'Enable verbose debug output with detailed API logs')
     .addCommand(createAssistantsSetupCommand().name('assistants'))
     .addCommand(createSkillsSetupCommand().name('skills'))
-    .action(async (options: { force?: boolean; verbose?: boolean }) => {
+    .action(async (options: { force?: boolean; verbose?: boolean; dryRun?: boolean }) => {
       // Enable debug mode if verbose flag is set
       if (options.verbose) {
         process.env.CODEMIE_DEBUG = 'true';
@@ -39,17 +42,20 @@ export function createSetupCommand(): Command {
       }
 
       try {
-        await runSetupWizard(options.force);
+        // Dry run: the wizard still asks its config questions, but every
+        // mutation is described instead of applied (see previewPluginSetup).
+        await runSetupWizard(options.force, options.dryRun ?? false);
       } catch (error: unknown) {
         logger.error('Setup failed:', error);
-        process.exit(1);
+        printEndCap();
+        process.exitCode = 1;
       }
     });
 
   return command;
 }
 
-async function runSetupWizard(force?: boolean): Promise<void> {
+async function runSetupWizard(force?: boolean, dryRun = false): Promise<void> {
   // Show ecosystem introduction
   FirstTimeExperience.showEcosystemIntro();
 
@@ -92,6 +98,9 @@ async function runSetupWizard(force?: boolean): Promise<void> {
 
       if (action === 'cancel') {
         console.log(chalk.yellow('\nSetup cancelled.\n'));
+        if (dryRun) {
+          printEndCap();
+        }
         return;
       }
 
@@ -218,7 +227,7 @@ async function runSetupWizard(force?: boolean): Promise<void> {
   }
 
   // Use plugin-based setup flow
-  await handlePluginSetup(provider, setupSteps, profileName, isUpdate, storageLocation);
+  await handlePluginSetup(provider, setupSteps, profileName, isUpdate, storageLocation, dryRun);
 }
 
 /**
@@ -228,11 +237,21 @@ async function runSetupWizard(force?: boolean): Promise<void> {
  */
 async function handlePluginSetup(
   providerName: string,
-  setupSteps: any,
+  setupSteps: ProviderSetupSteps,
   profileName: string | null,
   isUpdate: boolean,
-  storageLocation: 'global' | 'local' = 'global'
+  storageLocation: 'global' | 'local' = 'global',
+  dryRun = false
 ): Promise<void> {
+  // Dry run: describe the whole setup plan and stop before any side effect.
+  // Returning here is what guarantees getCredentials/fetchModels/installModel/
+  // saveUserEmail/saveProfile/initProjectConfig/switchProfile/
+  // checkAndInstallClaude are never reached.
+  if (dryRun) {
+    await previewPluginSetup(providerName, setupSteps, profileName, isUpdate, storageLocation);
+    return;
+  }
+
   try {
     const providerTemplate = ProviderRegistry.getProvider(providerName);
 
@@ -394,6 +413,91 @@ async function handlePluginSetup(
     displaySetupError(new Error(errorMessage), providerTemplate?.setupInstructions);
     throw error;
   }
+}
+
+/**
+ * Prompts the dry-run `codemie setup` plan: it asks the same configuration
+ * questions as the real wizard, then describes every mutation instead of
+ * applying it. No sign-in, credential-store write, network request, config
+ * write, install or spawned process happens on this path.
+ */
+async function previewPluginSetup(
+  providerName: string,
+  setupSteps: ProviderSetupSteps,
+  profileName: string | null,
+  isUpdate: boolean,
+  storageLocation: 'global' | 'local'
+): Promise<void> {
+  // Kept so the preview names the profile that would actually be written.
+  const finalProfileName = profileName ?? await promptForProfileName(providerName);
+
+  printPlannedActions(
+    buildSetupPlan(providerName, setupSteps, finalProfileName, isUpdate, storageLocation)
+  );
+  printEndCap();
+  process.exitCode = 0;
+}
+
+/**
+ * Builds the describe-only plan for `codemie setup --dry-run`.
+ *
+ * Credential effects come from the provider's own
+ * `describeCredentialSideEffects()`. Everything else is described here because
+ * none of it can run without the credentials (and therefore the sign-in) that
+ * the dry run deliberately skips — so no model name is ever claimed.
+ */
+function buildSetupPlan(
+  providerName: string,
+  setupSteps: ProviderSetupSteps,
+  profileName: string,
+  isUpdate: boolean,
+  storageLocation: 'global' | 'local'
+): PlannedAction[] {
+  const globalConfigPath = getCodemiePath('codemie-cli.config.json');
+  const configPath = storageLocation === 'local'
+    ? `${process.cwd()}/.codemie/codemie-cli.config.json`
+    : globalConfigPath;
+
+  const plan: PlannedAction[] = [
+    {
+      kind: 'network',
+      label: `would prompt for ${providerName} credentials`,
+      targets: [providerName]
+    },
+    ...setupSteps.describeCredentialSideEffects(),
+    // The model catalog is only reachable with the credentials gathered above;
+    // naming a model here would claim something this run cannot resolve.
+    {
+      kind: 'network',
+      label: `would configure ${providerName}`,
+      targets: ['model list requires sign-in']
+    },
+    {
+      kind: 'write-file',
+      label: 'Save the signed-in user email for analytics when the provider returns one',
+      targets: [globalConfigPath, 'userEmail']
+    },
+    {
+      kind: 'write-file',
+      label: `${isUpdate ? 'Update' : 'Save'} profile "${profileName}" in the ${storageLocation} config`,
+      targets: [
+        configPath,
+        ...(isUpdate ? [] : [`set "${profileName}" as the active profile in that config`])
+      ]
+    }
+  ];
+
+  // Mirrors the real flow: Claude is only checked/installed on first-time
+  // global setups, never on profile updates or local configs.
+  if (!isUpdate && storageLocation === 'global') {
+    plan.push({
+      kind: 'install',
+      label: 'would check and install Claude Code',
+      targets: ['claude', 'codemie install claude --supported']
+    });
+  }
+
+  return plan;
 }
 
 /**
